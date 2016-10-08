@@ -1,56 +1,71 @@
 /*
  * score editor
  *
- * @(#)scedit.c	4.2 (NMT from Berkeley 5.2) 8/25/83
+ * @(#)score.c	4.6 (Berkeley) 02/05/99
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980-1983, 1985, 1999 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
+# include   <curses.h>
 # include	<stdio.h>
-# include	<pwd.h>
 # include	<signal.h>
 # include	<ctype.h>
-# include	<unctrl.h>
 
+#ifndef TRUE
 # define	TRUE	1
+#endif
 # define	FALSE	0
+#ifndef bool
 # define	bool	char
-# define	RN	(((Seed = Seed*11109+13849) >> 16) & 0xffff)
+#endif
+# define	RN	(((seed = seed*11109+13849) >> 16) & 0xffff)
 
 # define	MAXSTR	80
 
 # include	"score.h"
 
-SCORE	Top_ten[10];
+SCORE	top_ten[10];
 
-char	Buf[BUFSIZ],
-	*Reason[] = {
+char	frob,
+	buf[BUFSIZ],
+	*reason[] = {
 		"killed",
 		"quit",
 		"A total winner",
+		"killed with amulet",
 	};
 
-int	Seed,
-	Inf;
+int	seed,
+	inf;
 
 struct passwd	*getpwnam();
+bool do_comm();
+int pr_score(SCORE *, bool);
 
+int
 main(ac, av)
 int	ac;
-char	**av; {
-
-	register char	*scorefile;
-	register FILE	*outf;
+char	**av;
+{
+	char	*scorefile;
+	FILE	*outf;
 
 	if (ac == 1)
-		scorefile = SCOREFILE;
+		scorefile = "rogue54.scr";
 	else
 		scorefile = av[1];
-	Seed = getpid();
+	seed = getpid();
 
-	if ((Inf = open(scorefile, 2)) < 0) {
+	if ((inf = open(scorefile, 2)) < 0) {
 		perror(scorefile);
 		exit(1);
 	}
-	s_encread((char *) Top_ten, sizeof Top_ten, Inf);
+	frob = 0;
+	s_encread((char *) top_ten, sizeof top_ten, inf);
 
 	while (do_comm())
 		continue;
@@ -62,36 +77,37 @@ char	**av; {
  * do_comm:
  *	Get and execute a command
  */
-do_comm() {
-
-	register char		*sp;
-	register SCORE		*scp;
-	register struct passwd	*pp;
-	struct passwd		*getpwuid();
-	static FILE		*outf = NULL;
-	static bool		written = TRUE;
+bool
+do_comm()
+{
+	char		*sp;
+	SCORE		*scp;
+	struct passwd	*pp;
+	static FILE	*outf = NULL;
+	static bool	written = TRUE;
 
 	printf("\nCommand: ");
-	while (isspace(Buf[0] = getchar()) || Buf[0] == '\n')
+	while (isspace(buf[0] = getchar()) || buf[0] == '\n')
 		continue;
-	fgets(&Buf[1], BUFSIZ, stdin);
-	Buf[strlen(Buf) - 1] = '\0';
-	switch (Buf[0]) {
+	fgets(&buf[1], BUFSIZ, stdin);
+	buf[strlen(buf) - 1] = '\0';
+	switch (buf[0]) {
 	  case 'w':
-		if (strncmp(Buf, "write", strlen(Buf)))
+		if (strncmp(buf, "write", strlen(buf)))
 			goto def;
-		lseek(Inf, 0L, 0);
-		if (outf == NULL && (outf = fdopen(Inf, "w")) == NULL) {
+		lseek(inf, 0L, 0);
+		if (outf == NULL && (outf = fdopen(inf, "w")) == NULL) {
 			perror("fdopen");
 			exit(1);
 		}
 		fseek(outf, 0L, 0);
 		if (s_lock_sc())
 		{
-			register int	(*fp)();
+			void (*fp)(int);
 
 			fp = signal(SIGINT, SIG_IGN);
-			s_encwrite((char *) Top_ten, sizeof Top_ten, outf);
+			frob = 0;
+			s_encwrite((char *) top_ten, sizeof top_ten, outf);
 			s_unlock_sc();
 			signal(SIGINT, fp);
 			written = TRUE;
@@ -99,30 +115,30 @@ do_comm() {
 		break;
 
 	  case 'a':
-		if (strncmp(Buf, "add", strlen(Buf)))
+		if (strncmp(buf, "add", strlen(buf)))
 			goto def;
 		add_score();
 		written = FALSE;
 		break;
 
 	  case 'd':
-		if (strncmp(Buf, "delete", strlen(Buf)))
+		if (strncmp(buf, "delete", strlen(buf)))
 			goto def;
 		del_score();
 		written = FALSE;
 		break;
 
 	  case 'p':
-		if (strncmp(Buf, "print", strlen(Buf)))
+		if (strncmp(buf, "print", strlen(buf)))
 			goto def;
 		printf("\nTop Ten Rogueists:\nRank\tScore\tName\n");
-		for (scp = Top_ten; scp < &Top_ten[10]; scp++)
+		for (scp = top_ten; scp < &top_ten[10]; scp++)
 			if (!pr_score(scp, TRUE))
 				break;
 		break;
 
 	  case 'q':
-		if (strncmp(Buf, "quit", strlen(Buf)))
+		if (strncmp(buf, "quit", strlen(buf)))
 			goto def;
 		if (!written) {
 			printf("No write\n");
@@ -134,7 +150,7 @@ do_comm() {
 
 	  default:
 def:
-		printf("Unkown command: \"%s\"\n", Buf);
+		printf("Unkown command: \"%s\"\n", buf);
 	}
 	return TRUE;
 }
@@ -143,21 +159,22 @@ def:
  * add_score:
  *	Add a score to the score file
  */
+
 add_score()
 {
-	register SCORE		*scp;
-	register struct passwd	*pp;
-	register int		i;
-	static SCORE		new;
+	SCORE		*scp;
+    int id = -1;
+	int		i;
+	static SCORE	new;
 
 	printf("Name: ");
 	fgets(new.sc_name, MAXSTR, stdin);
 	new.sc_name[strlen(new.sc_name) - 1] = '\0';
 	do {
-		printf("Reason: ");
+		printf("reason: ");
 		if ((new.sc_flags = getchar()) < '0' || new.sc_flags > '2') {
 			for (i = 0; i < 3; i++)
-				printf("%d: %s\n", i, Reason[i]);
+				printf("%d: %s\n", i, reason[i]);
 			ungetc(new.sc_flags, stdin);
 		}
 		while (getchar() != '\n')
@@ -165,25 +182,24 @@ add_score()
 	} while (new.sc_flags < '0' || new.sc_flags > '2');
 	new.sc_flags -= '0';
 	do {
-		printf("User: ");
-		fgets(Buf, BUFSIZ, stdin);
-		Buf[strlen(Buf) - 1] = '\0';
-		if ((pp = getpwnam(Buf)) == NULL)
-			printf("who (%s)?\n", Buf);
-	} while (pp == NULL);
-	new.sc_uid = pp->pw_uid;
+		printf("User Id: ");
+		fgets(buf, BUFSIZ, stdin);
+		buf[strlen(buf) - 1] = '\0';
+        id = atoi(buf);
+	} while (id == -1);
+	new.sc_uid = id;
 	do {
 		printf("Monster: ");
-		if (!isupper(new.sc_monster = getchar())) {
-			printf("type A-Z [%s]\n", unctrl(new.sc_monster));
+		if (!isalpha(new.sc_monster = getchar())) {
+			printf("type A-Za-z [%s]\n", unctrl(new.sc_monster));
 			ungetc(new.sc_monster, stdin);
 		}
 		while (getchar() != '\n')
 			continue;
-	} while (!isupper(new.sc_monster));
+	} while (!isalpha(new.sc_monster));
 	printf("Score: ");
 	scanf("%d", &new.sc_score);
-	printf("Level: ");
+	printf("level: ");
 	scanf("%d", &new.sc_level);
 	while (getchar() != '\n')
 		continue;
@@ -200,23 +216,18 @@ add_score()
  * pr_score:
  *	Print out a score entry.  Return FALSE if last entry.
  */
-pr_score(scp, num)
-register SCORE	*scp;
-bool		num; {
 
-	register struct passwd	*pp;
-
+pr_score(SCORE *scp, bool num)
+{
 	if (scp->sc_score) {
 		if (num)
-			printf("%d", scp - Top_ten + 1);
+			printf("%d", scp - top_ten + 1);
 		printf("\t%d\t%s: %s on level %d", scp->sc_score, scp->sc_name,
-		    Reason[scp->sc_flags], scp->sc_level);
+		    reason[scp->sc_flags], scp->sc_level);
 		if (scp->sc_flags == 0)
 		    printf(" by %s", s_killname((char) scp->sc_monster, TRUE));
-		if ((pp = getpwuid(scp->sc_uid)) == NULL)
-			printf(" (%d)", scp->sc_uid);
-		else
-			printf(" (%s)", pp->pw_name);
+		
+        printf(" (%s)", md_getrealname(scp->sc_uid));
 		putchar('\n');
 	}
 	return scp->sc_score;
@@ -226,29 +237,29 @@ bool		num; {
  * insert_score:
  *	Insert a score into the top ten list
  */
-insert_score(new)
-SCORE	*new; {
 
-	register SCORE	*scp, *sc2;
-	register int	flags, uid, amount;
+insert_score(SCORE *new)
+{
+	SCORE	*scp, *sc2;
+	int	flags, uid, amount;
 
 	flags = new->sc_flags;
 	uid = new->sc_uid;
 	amount = new->sc_score;
 
-	for (scp = Top_ten; scp < &Top_ten[10]; scp++)
+	for (scp = top_ten; scp < &top_ten[10]; scp++)
 		if (amount > scp->sc_score)
 			break;
 		else if (flags != 2 && scp->sc_uid == uid && scp->sc_flags != 2)
-			scp = &Top_ten[10];
-	if (scp < &Top_ten[10]) {
+			scp = &top_ten[10];
+	if (scp < &top_ten[10]) {
 		if (flags != 2)
-			for (sc2 = scp; sc2 < &Top_ten[10]; sc2++) {
+			for (sc2 = scp; sc2 < &top_ten[10]; sc2++) {
 			    if (sc2->sc_uid == uid && sc2->sc_flags != 2)
 				break;
 			}
 		else
-			sc2 = &Top_ten[9];
+			sc2 = &top_ten[9];
 		while (sc2 > scp) {
 			*sc2 = sc2[-1];
 			sc2--;
@@ -262,31 +273,32 @@ SCORE	*new; {
  * del_score:
  *	Delete a score from the score list.
  */
-del_score() {
 
-	register SCORE	*scp;
-	register int	i;
-	int		num;
+del_score()
+{
+	SCORE	*scp;
+	int	i;
+	int	num;
 
 	for (;;) {
 		printf("Which score? ");
-		fgets(Buf, BUFSIZ, stdin);
-		if (Buf[0] == '\n')
+		fgets(buf, BUFSIZ, stdin);
+		if (buf[0] == '\n')
 			return;
-		sscanf(Buf, "%d", &num);
+		sscanf(buf, "%d", &num);
 		if (num < 1 || num > 10)
 			printf("range is 1-10\n");
 		else
 			break;
 	}
 	num--;
-	for (scp = &Top_ten[num]; scp < &Top_ten[9]; scp++)
+	for (scp = &top_ten[num]; scp < &top_ten[9]; scp++)
 		*scp = scp[1];
-	Top_ten[9].sc_score = 0;
+	top_ten[9].sc_score = 0;
 	for (i = 0; i < MAXSTR; i++)
-	    Top_ten[9].sc_name[i] = RN;
-	Top_ten[9].sc_flags = RN;
-	Top_ten[9].sc_level = RN;
-	Top_ten[9].sc_monster = RN;
-	Top_ten[9].sc_uid = RN;
+	    top_ten[9].sc_name[i] = RN;
+	top_ten[9].sc_flags = RN;
+	top_ten[9].sc_level = RN;
+	top_ten[9].sc_monster = RN;
+	top_ten[9].sc_uid = RN;
 }

@@ -1,7 +1,13 @@
 /*
  * Draw the connecting passages
  *
- * @(#)passages.c	4.10 (NMT from Berkeley 5.2) 8/25/83
+ * @(#)passages.c	4.22 (Berkeley) 02/05/99
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980-1983, 1985, 1999 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 #include <curses.h>
@@ -11,11 +17,12 @@
  * do_passages:
  *	Draw all the passages on a level.
  */
+
 do_passages()
 {
-    register struct rdes *r1, *r2;
-    register int i, j;
-    register int roomcount;
+    struct rdes *r1, *r2 = NULL;
+    int i, j;
+    int roomcount;
     static struct rdes
     {
 	bool	conn[MAXROOMS];		/* possible to connect to room i? */
@@ -119,15 +126,15 @@ do_passages()
  * conn:
  *	Draw a corridor from a room in a certain direction.
  */
-conn(r1, r2)
-int r1, r2;
+
+conn(int r1, int r2)
 {
-    register struct room *rpf, *rpt;
-    register char rmt;
-    register int distance, turn_spot, turn_distance, index;
-    register int rm;
-    register char direc;
-    coord del, curr, turn_delta, spos, epos;
+    struct room *rpf, *rpt = NULL;
+    char rmt;
+    int distance = 0, turn_spot, turn_distance = 0;
+    int rm;
+    char direc;
+    static coord del, curr, turn_delta, spos, epos;
 
     if (r1 < r2)
     {
@@ -165,12 +172,12 @@ int r1, r2;
 	    {
 		spos.x = rpf->r_pos.x + rnd(rpf->r_max.x - 2) + 1;
 		spos.y = rpf->r_pos.y + rpf->r_max.y - 1;
-	    } while ((rpf->r_flags & ISMAZE) && chat(spos.y,spos.x) != PASSAGE);
+	    } while ((rpf->r_flags&ISMAZE) && !(flat(spos.y, spos.x)&F_PASS));
 	if (!(rpt->r_flags & ISGONE))
 	    do
 	    {
 		epos.x = rpt->r_pos.x + rnd(rpt->r_max.x - 2) + 1;
-	    } while ((rpt->r_flags & ISMAZE) && chat(epos.y,epos.x) != PASSAGE);
+	    } while ((rpt->r_flags&ISMAZE) && !(flat(epos.y, epos.x)&F_PASS));
 	distance = abs(spos.y - epos.y) - 1;	/* distance to move */
 	turn_delta.y = 0;			/* direction to turn */
 	turn_delta.x = (spos.x < epos.x ? 1 : -1);
@@ -191,18 +198,18 @@ int r1, r2;
 	    {
 		spos.x = rpf->r_pos.x + rpf->r_max.x - 1;
 		spos.y = rpf->r_pos.y + rnd(rpf->r_max.y - 2) + 1;
-	    } while ((rpf->r_flags & ISMAZE) && chat(spos.y,spos.x) != PASSAGE);
+	    } while ((rpf->r_flags&ISMAZE) && !(flat(spos.y, spos.x)&F_PASS));
 	if (!(rpt->r_flags & ISGONE))
 	    do
 	    {
 		epos.y = rpt->r_pos.y + rnd(rpt->r_max.y - 2) + 1;
-	    } while ((rpt->r_flags & ISMAZE) && chat(epos.y,epos.x) != PASSAGE);
+	    } while ((rpt->r_flags&ISMAZE) && !(flat(epos.y, epos.x)&F_PASS));
 	distance = abs(spos.x - epos.x) - 1;
 	turn_delta.y = (spos.y < epos.y ? 1 : -1);
 	turn_delta.x = 0;
 	turn_distance = abs(spos.y - epos.y);
     }
-#ifdef WIZARD
+#ifdef MASTER
     else
 	debug("error in connection tables");
 #endif
@@ -216,19 +223,11 @@ int r1, r2;
     if (!(rpf->r_flags & ISGONE))
 	door(rpf, &spos);
     else
-    {
-	index = INDEX(spos.y, spos.x);
-	_level[index] = PASSAGE;
-	_flags[index] |= F_PASS;
-    }
+	putpass(&spos);
     if (!(rpt->r_flags & ISGONE))
 	door(rpt, &epos);
     else
-    {
-	index = INDEX(epos.y, epos.x);
-	_level[index] = PASSAGE;
-	_flags[index] |= F_PASS;
-    }
+	putpass(&epos);
     /*
      * Get ready to move...
      */
@@ -247,18 +246,14 @@ int r1, r2;
 	if (distance == turn_spot)
 	    while (turn_distance--)
 	    {
-		index = INDEX(curr.y, curr.x);
-		_level[index] = PASSAGE;
-		_flags[index] |= F_PASS;
+		putpass(&curr);
 		curr.x += turn_delta.x;
 		curr.y += turn_delta.y;
 	    }
 	/*
 	 * Continue digging along
 	 */
-	index = INDEX(curr.y, curr.x);
-	_level[index] = PASSAGE;
-	_flags[index] |= F_PASS;
+	putpass(&curr);
 	distance--;
     }
     curr.x += del.x;
@@ -268,47 +263,86 @@ int r1, r2;
 }
 
 /*
+ * putpass:
+ *	add a passage character or secret passage here
+ */
+
+putpass(coord *cp)
+{
+    PLACE *pp;
+
+    pp = INDEX(cp->y, cp->x);
+    pp->p_flags |= F_PASS;
+    if (rnd(10) + 1 < level && rnd(40) == 0)
+	pp->p_flags &= ~F_REAL;
+    else
+	pp->p_ch = PASSAGE;
+}
+
+/*
  * door:
  *	Add a door or possibly a secret door.  Also enters the door in
  *	the exits array of the room.
  */
-door(rm, cp)
-register struct room *rm;
-register coord *cp;
+
+door(struct room *rm, coord *cp)
 {
-    register int index;
+    PLACE *pp;
 
     rm->r_exit[rm->r_nexits++] = *cp;
 
     if (rm->r_flags & ISMAZE)
 	return;
 
-    index = INDEX(cp->y, cp->x);
+    pp = INDEX(cp->y, cp->x);
     if (rnd(10) + 1 < level && rnd(5) == 0)
     {
 	if (cp->y == rm->r_pos.y || cp->y == rm->r_pos.y + rm->r_max.y - 1)
-		_level[index] = '-';
+		pp->p_ch = '-';
 	else
-		_level[index] = '|';
-	_flags[index] &= ~F_REAL;
+		pp->p_ch = '|';
+	pp->p_flags &= ~F_REAL;
     }
     else
-	_level[index] = DOOR;
+	pp->p_ch = DOOR;
 }
 
-#ifdef WIZARD
+#ifdef MASTER
 /*
  * add_pass:
  *	Add the passages to the current window (wizard command)
  */
+
 add_pass()
 {
-    register int y, x, ch;
+    PLACE *pp;
+    int y, x;
+    char ch;
 
-    for (y = 1; y < LINES - 1; y++)
-	for (x = 0; x < COLS; x++)
-	    if ((ch = chat(y, x)) == DOOR || ch == PASSAGE)
-		mvaddch(y, x, ch);
+    for (y = 1; y < NUMLINES - 1; y++)
+	for (x = 0; x < NUMCOLS; x++)
+	{
+	    pp = INDEX(y, x);
+	    if ((pp->p_flags & F_PASS) || pp->p_ch == DOOR ||
+		(!(pp->p_flags&F_REAL) && (pp->p_ch == '|' || pp->p_ch == '-')))
+	    {
+		ch = pp->p_ch;
+		if (pp->p_flags & F_PASS)
+		    ch = PASSAGE;
+		pp->p_flags |= F_SEEN;
+		move(y, x);
+		if (pp->p_monst != NULL)
+		    pp->p_monst->t_oldch = pp->p_ch;
+		else if (pp->p_flags & F_REAL)
+		    addch(ch);
+		else
+		{
+		    standout();
+		    addch((pp->p_flags & F_PASS) ? PASSAGE : DOOR);
+		    standend();
+		}
+	    }
+	}
 }
 #endif
 
@@ -319,10 +353,11 @@ add_pass()
 static int pnum;
 static bool newpnum;
 
+
 passnum()
 {
-    register struct room *rp;
-    register int i;
+    struct room *rp;
+    int i;
 
     pnum = 0;
     newpnum = FALSE;
@@ -340,14 +375,14 @@ passnum()
  * numpass:
  *	Number a passageway square and its brethren
  */
-numpass(y, x)
-register int y, x;
-{
-    register char *fp;
-    register struct room *rp;
-    register char ch;
 
-    if (x >= COLS || x < 0 || y >= LINES || y < 1)
+numpass(int y, int x)
+{
+    char *fp;
+    struct room *rp;
+    char ch;
+
+    if (x >= NUMCOLS || x < 0 || y >= NUMLINES || y <= 0)
 	return;
     fp = &flat(y, x);
     if (*fp & F_PNUM)
@@ -361,7 +396,8 @@ register int y, x;
      * check to see if it is a door or secret door, i.e., a new exit,
      * or a numerable type of place
      */
-    if ((ch = chat(y, x)) == DOOR || (!(*fp & F_REAL) && ch != FLOOR))
+    if ((ch = chat(y, x)) == DOOR ||
+	(!(*fp & F_REAL) && (ch == '|' || ch == '-')))
     {
 	rp = &passages[pnum];
 	rp->r_exit[rp->r_nexits].y = y;

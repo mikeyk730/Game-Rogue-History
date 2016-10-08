@@ -1,7 +1,13 @@
 /*
  * Code for one creature to chase another
  *
- * @(#)chase.c	4.30 (NMT from Berkeley 5.2) 8/25/83
+ * @(#)chase.c	4.57 (Berkeley) 02/05/99
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980-1983, 1985, 1999 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 #include <curses.h>
@@ -9,7 +15,7 @@
 
 #define DRAGONSHOT  5	/* one chance in DRAGONSHOT that a dragon will flame */
 
-coord ch_ret;				/* Where chasing takes you */
+static coord ch_ret;				/* Where chasing takes you */
 
 /*
  * runners:
@@ -18,17 +24,84 @@ coord ch_ret;				/* Where chasing takes you */
 runners()
 {
     register THING *tp;
+    THING *next;
+    bool wastarget;
+    static coord orig_pos;
 
-    for (tp = mlist; tp != NULL; tp = next(tp))
+    for (tp = mlist; tp != NULL; tp = next)
     {
+        /* remember this in case the monster's "next" is changed */
+        next = next(tp);
 	if (!on(*tp, ISHELD) && on(*tp, ISRUN))
 	{
-	    if (!on(*tp, ISSLOW) || tp->t_turn)
-		do_chase(tp);
-	    if (on(*tp, ISHASTE))
-		do_chase(tp);
-	    tp->t_turn ^= TRUE;
+	    orig_pos = tp->t_pos;
+	    wastarget = on(*tp, ISTARGET);
+	    if (move_monst(tp) == -1)
+                continue;
+	    if (on(*tp, ISFLY) && dist_cp(&hero, &tp->t_pos) >= 3)
+		move_monst(tp);
+	    if (wastarget && !ce(orig_pos, tp->t_pos))
+	    {
+		tp->t_flags &= ~ISTARGET;
+		to_death = FALSE;
+	    }
 	}
+    }
+    if (has_hit)
+    {
+	endmsg();
+	has_hit = FALSE;
+    }
+}
+
+/*
+ * move_monst:
+ *	Execute a single turn of running for a monster
+ */
+move_monst(tp)
+register THING *tp;
+{
+    if (!on(*tp, ISSLOW) || tp->t_turn)
+	if (do_chase(tp) == -1)
+            return(-1);
+    if (on(*tp, ISHASTE))
+	if (do_chase(tp) == -1)
+            return(-1);
+    tp->t_turn ^= TRUE;
+    return(0);
+}
+
+/*
+ * relocate:
+ *	Make the monster's new location be the specified one, updating
+ *	all the relevant state.
+ */
+void
+relocate(THING *th, coord *new_loc)
+{
+    struct room *oroom;
+
+    if (!ce(*new_loc, th->t_pos))
+    {
+	mvaddch(th->t_pos.y, th->t_pos.x, th->t_oldch);
+	th->t_room = roomin(new_loc);
+	set_oldch(th, new_loc);
+	oroom = th->t_room;
+	moat(th->t_pos.y, th->t_pos.x) = NULL;
+
+	if (oroom != th->t_room)
+	    th->t_dest = find_dest(th);
+	th->t_pos = *new_loc;
+	moat(new_loc->y, new_loc->x) = th;
+    }
+    move(new_loc->y, new_loc->x);
+    if (see_monst(th))
+	addch(th->t_disguise);
+    else if (on(player, SEEMONST))
+    {
+	standout();
+	addch(th->t_type);
+	standend();
     }
 }
 
@@ -39,14 +112,13 @@ runners()
 do_chase(th)
 register THING *th;
 {
+    register coord *cp;
     register struct room *rer, *ree;	/* room of chaser, room of chasee */
-    register int mindist = 32767, i, dist;
+    register int mindist = 32767, curdist;
     register bool stoprun = FALSE;	/* TRUE means we are there */
-    register char sch;
     register bool door;
     register THING *obj;
-    register struct room *oroom;
-    coord this;				/* Temporary destination for chaser */
+    static coord this;			/* Temporary destination for chaser */
 
     rer = th->t_room;		/* Find room of chaser */
     if (on(*th, ISGREED) && rer->r_goldval == 0)
@@ -67,14 +139,13 @@ register THING *th;
 over:
     if (rer != ree)
     {
-	for (i = 0; i < rer->r_nexits; i++)	/* loop through doors */
+	for (cp = rer->r_exit; cp < &rer->r_exit[rer->r_nexits]; cp++)
 	{
-	    dist = DISTANCE(th->t_dest->y, th->t_dest->x,
-			    rer->r_exit[i].y, rer->r_exit[i].x);
-	    if (dist < mindist)
+	    curdist = dist_cp(th->t_dest, cp);
+	    if (curdist < mindist)
 	    {
-		this = rer->r_exit[i];
-		mindist = dist;
+		this = *cp;
+		mindist = curdist;
 	    }
 	}
 	if (door)
@@ -94,15 +165,23 @@ over:
 	 */
 	if (th->t_type == 'D' && (th->t_pos.y == hero.y || th->t_pos.x == hero.x
 	    || abs(th->t_pos.y - hero.y) == abs(th->t_pos.x - hero.x))
-	    && DISTANCE(th->t_pos.y, th->t_pos.x, hero.y, hero.x) <= BOLT_LENGTH * BOLT_LENGTH
+	    && dist_cp(&th->t_pos, &hero) <= BOLT_LENGTH * BOLT_LENGTH
 	    && !on(*th, ISCANC) && rnd(DRAGONSHOT) == 0)
 	{
 	    delta.y = sign(hero.y - th->t_pos.y);
 	    delta.x = sign(hero.x - th->t_pos.x);
+	    if (has_hit)
+		endmsg();
 	    fire_bolt(&th->t_pos, &delta, "flame");
 	    running = FALSE;
-	    count = quiet = 0;
-	    return;
+	    count = 0;
+	    quiet = 0;
+	    if (to_death && !on(*th, ISTARGET))
+	    {
+		to_death = FALSE;
+		kamikaze = FALSE;
+	    }
+	    return(0);
 	}
     }
     /*
@@ -114,8 +193,7 @@ over:
     {
 	if (ce(this, hero))
 	{
-	    attack(th);
-	    return;
+	    return( attack(th) );
 	}
 	else if (ce(this, *th->t_dest))
 	{
@@ -133,55 +211,66 @@ over:
 		stoprun = TRUE;
 	}
     }
-    else if (th->t_type == 'F')
-	return;
-    mvaddch(th->t_pos.y, th->t_pos.x, th->t_oldch);
-    if (!ce(ch_ret, th->t_pos))
+    else
     {
-	sch = mvinch(ch_ret.y, ch_ret.x);
-	if (sch == FLOOR && (th->t_room->r_flags & ISDARK)
-	    && DISTANCE(th->t_pos.y, th->t_pos.x, hero.y, hero.x)
-	    && !on(player, ISBLIND))
-		th->t_oldch = ' ';
-	else
-	    th->t_oldch = sch;
-	oroom = th->t_room;
-	th->t_room = roomin(&ch_ret);
-	if (oroom != th->t_room)
-	    th->t_dest = find_dest(th);
-
-	moat(th->t_pos.y, th->t_pos.x) = NULL;
-	moat(ch_ret.y, ch_ret.x) = th;
-	th->t_pos = ch_ret;
+	if (th->t_type == 'F')
+	    return(0);
     }
-    if (see_monst(th))
-	mvaddch(ch_ret.y, ch_ret.x, th->t_disguise);
-    else if (on(player, SEEMONST))
-    {
-	standout();
-	mvaddch(ch_ret.y, ch_ret.x, th->t_type);
-	standend();
-    }
+    relocate(th, &ch_ret);
     /*
      * And stop running if need be
      */
     if (stoprun && ce(th->t_pos, *(th->t_dest)))
 	th->t_flags &= ~ISRUN;
+    return(0);
+}
+
+/*
+ * set_oldch:
+ *	Set the oldch character for the monster
+ */
+set_oldch(tp, cp)
+register THING *tp;
+register coord *cp;
+{
+    char sch;
+
+    if (ce(tp->t_pos, *cp))
+        return;
+
+    sch = tp->t_oldch;
+    tp->t_oldch = mvinch(cp->y,cp->x);
+    if (!on(player, ISBLIND))
+	    if ((sch == FLOOR || tp->t_oldch == FLOOR) &&
+		(tp->t_room->r_flags & ISDARK))
+		    tp->t_oldch = ' ';
+	    else if (dist_cp(cp, &hero) <= LAMPDIST && see_floor)
+		tp->t_oldch = chat(cp->y, cp->x);
 }
 
 /*
  * see_monst:
  *	Return TRUE if the hero can see the monster
  */
+bool
 see_monst(mp)
 register THING *mp;
 {
+    int y, x;
+
     if (on(player, ISBLIND))
 	return FALSE;
     if (on(*mp, ISINVIS) && !on(player, CANSEE))
 	return FALSE;
-    if (DISTANCE(mp->t_pos.y, mp->t_pos.x, hero.y, hero.x) < LAMPDIST)
+    y = mp->t_pos.y;
+    x = mp->t_pos.x;
+    if (dist(y, x, hero.y, hero.x) < LAMPDIST)
+    {
+	if (y != hero.y && x != hero.x &&
+	    !step_ok(chat(y, hero.x)) && !step_ok(chat(hero.y, x)))
+		return FALSE;
 	return TRUE;
+    }
     if (mp->t_room != proom)
 	return FALSE;
     return (!(mp->t_room->r_flags & ISDARK));
@@ -199,7 +288,7 @@ register coord *runner;
     /*
      * If we couldn't find him, something is funny
      */
-#ifdef WIZARD
+#ifdef MASTER
     if ((tp = moat(runner->y, runner->x)) == NULL)
 	msg("couldn't find monster in runto at (%d,%d)", runner->y, runner->x);
 #else
@@ -219,30 +308,32 @@ register coord *runner;
  *	chasee(ee).  Returns TRUE if we want to keep on chasing later
  *	FALSE if we reach the goal.
  */
-chase(tp, ee)
+bool
+chase(tp,ee)
 THING *tp;
 coord *ee;
 {
-    register int x, y;
-    register int dist, thisdist;
     register THING *obj;
+    register int x, y;
+    register int curdist, thisdist;
     register coord *er = &tp->t_pos;
     register char ch;
     register int plcnt = 1;
+    static coord tryp;
 
     /*
      * If the thing is confused, let it move randomly. Invisible
      * Stalkers are slightly confused all of the time, and bats are
      * quite confused all the time
      */
-    if ((on(*tp, ISHUH) && rnd(5) != 0) || (tp->t_type == 'I' && rnd(5) == 0)
+    if ((on(*tp, ISHUH) && rnd(5) != 0) || (tp->t_type == 'P' && rnd(5) == 0)
 	|| (tp->t_type == 'B' && rnd(2) == 0))
     {
 	/*
 	 * get a valid random move
 	 */
 	ch_ret = *rndmove(tp);
-	dist = DISTANCE(ch_ret.y, ch_ret.x, ee->y, ee->x);
+	curdist = dist_cp(&ch_ret, ee);
 	/*
 	 * Small chance that it will become un-confused 
 	 */
@@ -260,17 +351,23 @@ coord *ee;
 	 * This will eventually hold where we move to get closer
 	 * If we can't find an empty spot, we stay where we are.
 	 */
-	dist = DISTANCE(er->y, er->x, ee->y, ee->x);
+	curdist = dist_cp(er, ee);
 	ch_ret = *er;
 
 	ey = er->y + 1;
+	if (ey >= NUMLINES - 1)
+	    ey = NUMLINES - 2;
 	ex = er->x + 1;
+	if (ex >= NUMCOLS)
+	    ex = NUMCOLS - 1;
+
 	for (x = er->x - 1; x <= ex; x++)
+	{
+	    if (x < 0)
+		continue;
+	    tryp.x = x;
 	    for (y = er->y - 1; y <= ey; y++)
 	    {
-		coord tryp;
-
-		tryp.x = x;
 		tryp.y = y;
 		if (!diag_ok(er, &tryp))
 		    continue;
@@ -292,25 +389,31 @@ coord *ee;
 			    continue;
 		    }
 		    /*
+		     * It can also be a Xeroc, which we shouldn't step on
+		     */
+		    if ((obj = moat(y, x)) != NULL && obj->t_type == 'X')
+			continue;
+		    /*
 		     * If we didn't find any scrolls at this place or it
 		     * wasn't a scare scroll, then this place counts
 		     */
-		    thisdist = DISTANCE(y, x, ee->y, ee->x);
-		    if (thisdist < dist)
+		    thisdist = dist(y, x, ee->y, ee->x);
+		    if (thisdist < curdist)
 		    {
 			plcnt = 1;
 			ch_ret = tryp;
-			dist = thisdist;
+			curdist = thisdist;
 		    }
-		    else if (thisdist == dist && rnd(++plcnt) == 0)
+		    else if (thisdist == curdist && rnd(++plcnt) == 0)
 		    {
 			ch_ret = tryp;
-			dist = thisdist;
+			curdist = thisdist;
 		    }
 		}
 	    }
+	}
     }
-    return (dist != 0 && !ce(ch_ret, hero));
+    return (curdist != 0 && !ce(ch_ret, hero));
 }
 
 /*
@@ -336,7 +439,7 @@ register coord *cp;
 	    return rp;
 
     msg("in some bizarre place (%d, %d)", unc(*cp));
-#ifdef WIZARD
+#ifdef MASTER
     abort();
     /* NOTREACHED */
 #else
@@ -348,9 +451,12 @@ register coord *cp;
  * diag_ok:
  *	Check to see if the move is legal if it is diagonal
  */
-diag_ok(sp, ep)
+bool
+diag_ok(sp,ep)
 register coord *sp, *ep;
 {
+    if (ep->x < 0 || ep->x >= NUMCOLS || ep->y <= 0 || ep->y >= NUMLINES - 1)
+	return FALSE;
     if (ep->x == sp->x || ep->y == sp->y)
 	return TRUE;
     return (step_ok(chat(ep->y, sp->x)) && step_ok(chat(sp->y, ep->x)));
@@ -360,16 +466,23 @@ register coord *sp, *ep;
  * cansee:
  *	Returns true if the hero can see a certain coordinate.
  */
-cansee(y, x)
+bool
+cansee(y,x)
 register int y, x;
 {
     register struct room *rer;
-    coord tp;
+    static coord tp;
 
     if (on(player, ISBLIND))
 	return FALSE;
-    if (DISTANCE(y, x, hero.y, hero.x) < LAMPDIST)
+    if (dist(y, x, hero.y, hero.x) < LAMPDIST)
+    {
+	if (flat(y, x) & F_PASS)
+	    if (y != hero.y && x != hero.x &&
+		!step_ok(chat(y, hero.x)) && !step_ok(chat(hero.y, x)))
+		    return FALSE;
 	return TRUE;
+    }
     /*
      * We can only see if the hero in the same room as
      * the coordinate and the room is lit or if it is close.
@@ -389,17 +502,15 @@ register THING *tp;
 {
     register THING *obj;
     register int prob;
-    register struct room *rp;
 
     if ((prob = monsters[tp->t_type - 'A'].m_carry) <= 0 || tp->t_room == proom
 	|| see_monst(tp))
 	    return &hero;
-    rp = tp->t_room;
     for (obj = lvl_obj; obj != NULL; obj = next(obj))
     {
 	if (obj->o_type == SCROLL && obj->o_which == S_SCARE)
 	    continue;
-	if (roomin(&obj->o_pos) == rp && rnd(100) < prob)
+	if (roomin(&obj->o_pos) == tp->t_room && rnd(100) < prob)
 	{
 	    for (tp = mlist; tp != NULL; tp = next(tp))
 		if (tp->t_dest == &obj->o_pos)
@@ -409,4 +520,28 @@ register THING *tp;
 	}
     }
     return &hero;
+}
+
+/*
+ * dist:
+ *	Calculate the "distance" between to points.  Actually,
+ *	this calculates d^2, not d, but that's good enough for
+ *	our purposes, since it's only used comparitively.
+ */
+int
+dist(y1,x1,y2,x2)
+register int y1, x1, y2, x2;
+{
+    return ((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
+}
+
+/*
+ * dist_cp:
+ *	Call dist() with appropriate arguments for coord pointers
+ */
+int
+dist_cp(c1,c2)
+register coord *c1, *c2;
+{
+    return dist(c1->y, c1->x, c2->y, c2->x);
 }

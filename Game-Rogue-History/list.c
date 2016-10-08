@@ -1,23 +1,35 @@
 /*
  * Functions for dealing with linked lists of goodies
  *
- * @(#)list.c	4.8 (NMT from Berkeley 5.2) 8/25/83
+ * @(#)list.c	4.12 (Berkeley) 02/05/99
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980-1983, 1985, 1999 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 #include <curses.h>
 #include "rogue.h"
 
+#ifdef MASTER
+int total = 0;			/* total dynamic memory bytes */
+#endif
+
 /*
  * detach:
- *	Takes an item out of whatever linked list it might be in
+ *	takes an item out of whatever linked list it might be in
  */
-_detach(list, item)
-register THING **list, *item;
+
+_detach(THING **list, THING *item)
 {
     if (*list == item)
 	*list = next(item);
-    if (prev(item) != NULL) item->l_prev->l_next = next(item);
-    if (next(item) != NULL) item->l_next->l_prev = prev(item);
+    if (prev(item) != NULL)
+	item->l_prev->l_next = next(item);
+    if (next(item) != NULL)
+	item->l_next->l_prev = prev(item);
     item->l_next = NULL;
     item->l_prev = NULL;
 }
@@ -26,8 +38,8 @@ register THING **list, *item;
  * _attach:
  *	add an item to the head of a list
  */
-_attach(list, item)
-register THING **list, *item;
+
+_attach(THING **list, THING *item)
 {
     if (*list != NULL)
     {
@@ -47,10 +59,10 @@ register THING **list, *item;
  * _free_list:
  *	Throw the whole blamed thing away
  */
-_free_list(ptr)
-register THING **ptr;
+
+_free_list(THING **ptr)
 {
-    register THING *item;
+    THING *item;
 
     while (*ptr != NULL)
     {
@@ -64,11 +76,13 @@ register THING **ptr;
  * discard:
  *	Free up an item
  */
-discard(item)
-register THING *item;
+
+discard(THING *item)
 {
+#ifdef MASTER
     total--;
-    cfree((char *) item);
+#endif
+    free((char *) item);
 }
 
 /*
@@ -78,13 +92,17 @@ register THING *item;
 THING *
 new_item()
 {
-    register THING *item;
-    THING *calloc();
+    THING *item;
 
+#ifdef MASTER
     if ((item = calloc(1, sizeof *item)) == NULL)
 	msg("ran out of memory after %d items", total);
     else
 	total++;
-    item->l_next = item->l_prev = NULL;
+#else
+    item = calloc(1, sizeof *item);
+#endif
+    item->l_next = NULL;
+    item->l_prev = NULL;
     return item;
 }

@@ -1,7 +1,7 @@
 /*
  * Various input/output functions
  *
- * @(#)io.c	4.16 (NMT from Berkeley 5.2) 8/25/83
+ * @(#)io.c	4.32 (Berkeley) 02/05/99
  */
 
 #include <curses.h>
@@ -12,14 +12,16 @@
  * msg:
  *	Display a message at the top of the screen.
  */
-static char msgbuf[BUFSIZ];
+#define MAXMSG	(NUMCOLS - sizeof "--More--")
+
+static char msgbuf[2*MAXMSG+1];
 static int newpos = 0;
 
 /* VARARGS1 */
-msg(fmt, args)
-char *fmt;
-int args;
+msg(char *fmt, ...)
 {
+    va_list args;
+
     /*
      * if the string is "", just clear the line
      */
@@ -28,13 +30,15 @@ int args;
 	move(0, 0);
 	clrtoeol();
 	mpos = 0;
-	return;
+	return ~ESCAPE;
     }
     /*
      * otherwise add to the message and flush it out
      */
-    doadd(fmt, &args);
-    endmsg();
+    va_start(args, fmt);
+    doadd(fmt, args);
+    va_end(args);
+    return endmsg();
 }
 
 /*
@@ -42,11 +46,13 @@ int args;
  *	Add things to the current message
  */
 /* VARARGS1 */
-addmsg(fmt, args)
-char *fmt;
-int args;
+addmsg(char *fmt, ...)
 {
-    doadd(fmt, &args);
+    va_list args;
+
+    va_start(args, fmt);
+    doadd(fmt, args);
+    va_end(args);
 }
 
 /*
@@ -56,50 +62,60 @@ int args;
  */
 endmsg()
 {
+    char ch;
+
     if (save_msg)
 	strcpy(huh, msgbuf);
     if (mpos)
     {
 	look(FALSE);
-	move(0, mpos);
-	addstr("--More--");
+	mvaddstr(0, mpos, "--More--");
 	refresh();
-	wait_for(' ');
+	if (!msg_esc)
+	    wait_for(' ');
+	else
+	{
+	    while ((ch = readchar()) != ' ')
+		if (ch == ESCAPE)
+		{
+		    msgbuf[0] = '\0';
+		    mpos = 0;
+		    newpos = 0;
+		    msgbuf[0] = '\0';
+		    return ESCAPE;
+		}
+	}
     }
     /*
      * All messages should start with uppercase, except ones that
      * start with a pack addressing character
      */
-    if (islower(msgbuf[0]) && msgbuf[1] != ')')
+    if (islower(msgbuf[0]) && !lower_msg && msgbuf[1] != ')')
 	msgbuf[0] = toupper(msgbuf[0]);
     mvaddstr(0, 0, msgbuf);
     clrtoeol();
     mpos = newpos;
     newpos = 0;
+    msgbuf[0] = '\0';
     refresh();
+    return ~ESCAPE;
 }
 
 /*
  * doadd:
  *	Perform an add onto the message buffer
  */
-doadd(fmt, args)
-char *fmt;
-int *args;
+doadd(char *fmt, va_list args)
 {
-    static FILE junk;
+    static char buf[MAXSTR];
 
     /*
      * Do the printf into buf
      */
-/*    junk._flag = _IOWRT + _IOSTRG; HMS */
-    junk._flag = _IOWRT;
-/*    junk._ptr = &msgbuf[newpos]; HMS */
-    junk._base = junk._ptr = &msgbuf[newpos];
-    junk._cnt = 32767;
-    junk._file = _NFILE;	/* added. HMS */
-    _doprnt(fmt, args, &junk);	/**/
-    putc('\0', &junk);
+    vsprintf(buf, fmt, args);
+    if (strlen(buf) + newpos >= MAXMSG)
+        endmsg(); 
+    strcat(msgbuf, buf);
     newpos = strlen(msgbuf);
 }
 
@@ -126,27 +142,17 @@ step_ok(ch)
  */
 readchar()
 {
-    register int cnt;
-    char c;
+    int ch;
 
-    cnt = 0;
-    while (read(0, &c, 1) <= 0)
-	if (cnt++ > 100)	/* if we are getting infinite EOFs */
-	    auto_save();	/* save the game */
-    return c;
-}
+    ch = md_readchar();
 
-/*
- * unctrl:
- *	Print a readable version of a certain character
- */
-char *
-unctrl(ch)
-char ch;
-{
-    extern char *_unctrl[];		/* Defined in curses library */
+    if ((ch == 3) || (ch == 0))
+    {
+	quit(0);
+        return(27);
+    }
 
-    return _unctrl[ch&0177];
+    return(ch);
 }
 
 /*
@@ -156,9 +162,13 @@ char ch;
 status()
 {
     register int oy, ox, temp;
-    static int hpwidth = 0, s_hungry;
-    static int s_lvl, s_pur = -1, s_hp, s_ac = 0;
-    static str_t s_str;
+    static int hpwidth = 0;
+    static int s_hungry = 0;
+    static int s_lvl = 0;
+    static int s_pur = -1;
+    static int s_hp = 0;
+    static int s_arm = 0;
+    static str_t s_str = 0;
     static long s_exp = 0;
     static char *state_name[] =
     {
@@ -169,36 +179,54 @@ status()
      * If nothing has changed since the last status, don't
      * bother.
      */
+    temp = (cur_armor != NULL ? cur_armor->o_arm : pstats.s_arm);
     if (s_hp == pstats.s_hpt && s_exp == pstats.s_exp && s_pur == purse
-	&& s_ac == (cur_armor != NULL ? cur_armor->o_ac : pstats.s_arm)
-	&& s_str == pstats.s_str && s_lvl == level && s_hungry == hungry_state)
+	&& s_arm == temp && s_str == pstats.s_str && s_lvl == level
+	&& s_hungry == hungry_state
+	&& !stat_msg
+	)
 	    return;
-	
+
+    s_arm = temp;
+
     getyx(stdscr, oy, ox);
     if (s_hp != max_hp)
     {
-	temp = s_hp = max_hp;
+	temp = max_hp;
+	s_hp = max_hp;
 	for (hpwidth = 0; temp; hpwidth++)
 	    temp /= 10;
     }
-    move(LINES - 1, 0);
-    printw("Level: %d  Gold: %-5d  Hp: %*d(%*d)  Str: %2d(%d)  Ac: %-2d  Exp: %d/%ld  %s",
-	    level, purse, hpwidth, pstats.s_hpt, hpwidth, max_hp, pstats.s_str,
-	    max_stats.s_str,
-	    cur_armor != NULL ? cur_armor->o_ac : pstats.s_arm, pstats.s_lvl,
-	    pstats.s_exp, state_name[hungry_state]);
 
-    clrtoeol();
     /*
-     * Save old status
+     * Save current status
      */
     s_lvl = level;
     s_pur = purse;
     s_hp = pstats.s_hpt;
     s_str = pstats.s_str;
     s_exp = pstats.s_exp; 
-    s_ac = (cur_armor != NULL ? cur_armor->o_ac : pstats.s_arm);
     s_hungry = hungry_state;
+
+    if (stat_msg)
+    {
+	move(0, 0);
+        msg("Level: %d  Gold: %-5d  Hp: %*d(%*d)  Str: %2d(%d)  Arm: %-2d  Exp: %d/%ld  %s",
+	    level, purse, hpwidth, pstats.s_hpt, hpwidth, max_hp, pstats.s_str,
+	    max_stats.s_str, 10 - s_arm, pstats.s_lvl, pstats.s_exp,
+	    state_name[hungry_state]);
+    }
+    else
+    {
+	move(STATLINE, 0);
+                
+        printw("Level: %d  Gold: %-5d  Hp: %*d(%*d)  Str: %2d(%d)  Arm: %-2d  Exp: %d/%ld  %s",
+	    level, purse, hpwidth, pstats.s_hpt, hpwidth, max_hp, pstats.s_str,
+	    max_stats.s_str, 10 - s_arm, pstats.s_lvl, pstats.s_exp,
+	    state_name[hungry_state]);
+    }
+
+    clrtoeol();
     move(oy, ox);
 }
 
@@ -207,7 +235,7 @@ status()
  *	Sit around until the guy types the right key
  */
 wait_for(ch)
-register char ch;
+register int ch;
 {
     register char c;
 
@@ -223,17 +251,20 @@ register char ch;
  * show_win:
  *	Function used to display a window and wait before returning
  */
-show_win(scr, message)
-register WINDOW *scr;
+show_win(message)
 char *message;
 {
-    mvwaddstr(scr, 0, 0, message);
-    touchwin(scr);
-    wmove(scr, hero.y, hero.x);
-    wrefresh(scr);
+    WINDOW *win;
+
+    win = hw;
+    wmove(win, 0, 0);
+    waddstr(win, message);
+    touchwin(win);
+    wmove(win, hero.y, hero.x);
+    wrefresh(win);
     wait_for(' ');
     clearok(curscr, TRUE);
 #ifdef	attron
     touchwin(stdscr);
-#endif	attron
+#endif	/* attron */
 }

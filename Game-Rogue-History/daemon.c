@@ -2,7 +2,13 @@
  * Contains functions for dealing with things that happen in the
  * future.
  *
- * @(#)daemon.c	4.5 (NMT from Berkeley 5.2) 8/25/83
+ * @(#)daemon.c	4.7 (Berkeley) 02/05/99
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980-1983, 1985, 1999 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 #include <curses.h>
@@ -14,12 +20,7 @@
 
 #define _X_ { EMPTY }
 
-struct delayed_action {
-    int d_type;
-    int (*d_func)();
-    int d_arg;
-    int d_time;
-} d_list[MAXDAEMONS] = {
+struct delayed_action d_list[MAXDAEMONS] = {
     _X_, _X_, _X_, _X_, _X_, _X_, _X_, _X_, _X_, _X_,
     _X_, _X_, _X_, _X_, _X_, _X_, _X_, _X_, _X_, _X_, 
 };
@@ -31,13 +32,12 @@ struct delayed_action {
 struct delayed_action *
 d_slot()
 {
-    register int i;
     register struct delayed_action *dev;
 
-    for (i = 0, dev = d_list; i < MAXDAEMONS; i++, dev++)
+    for (dev = d_list; dev < &d_list[MAXDAEMONS]; dev++)
 	if (dev->d_type == EMPTY)
 	    return dev;
-#ifdef WIZARD
+#ifdef MASTER
     debug("Ran out of fuse slots");
 #endif
     return NULL;
@@ -51,20 +51,19 @@ struct delayed_action *
 find_slot(func)
 register int (*func)();
 {
-    register int i;
     register struct delayed_action *dev;
 
-    for (i = 0, dev = d_list; i < MAXDAEMONS; i++, dev++)
+    for (dev = d_list; dev < &d_list[MAXDAEMONS]; dev++)
 	if (dev->d_type != EMPTY && func == dev->d_func)
 	    return dev;
     return NULL;
 }
 
 /*
- * daemon:
+ * start_daemon:
  *	Start a daemon, takes a function.
  */
-daemon(func, arg, type)
+start_daemon(func, arg, type)
 int (*func)(), arg, type;
 {
     register struct delayed_action *dev;
@@ -172,7 +171,6 @@ register int flag;
      * Step though the list
      */
     for (wire = d_list; wire < &d_list[MAXDAEMONS]; wire++)
-    {
 	/*
 	 * Decrementing counters and starting things we want.  We also need
 	 * to remove the fuse from the list once it has gone off.
@@ -182,5 +180,4 @@ register int flag;
 	    wire->d_type = EMPTY;
 	    (*wire->d_func)(wire->d_arg);
 	}
-     }
 }

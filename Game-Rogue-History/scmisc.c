@@ -1,12 +1,19 @@
 /*
- * copies of several routines needed for scedit
+ * copies of several routines needed for score
  *
- * @(#)scmisc.c	4.2 (NMT from Berkeley 5.2) 8/25/83
+ * @(#)smisc.c	4.7 (Berkeley) 02/05/99
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980-1983, 1985, 1999 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 # include	<stdio.h>
 # include	<sys/types.h>
 # include	<sys/stat.h>
+# include	<ctype.h>
 
 # define	TRUE		1
 # define	FALSE		0
@@ -21,18 +28,19 @@ typedef struct {
 
 char	*s_vowelstr();
 
-extern char	encstr[];
+extern char	encstr[], frob;
 
-char *lockfile = "/tmp/.roguelock";
-char prbuf[MAXSTR];			/* Buffer for sprintfs */
+char *lockfile = "/tmp/.fredlock";
+
+char prbuf[MAXSTR];			/* buffer for sprintfs */
 
 MONST	monsters[] = {
-	{ "giant ant" }, { "bat" }, { "centaur" }, { "dragon" },
-	{ "floating eye" }, { "violet fungi" }, { "gnome" }, { "hobgoblin" },
-	{ "invisible stalker" }, { "jackal" }, { "kobold" }, { "leprechaun" },
-	{ "mimic" }, { "nymph" }, { "orc" }, { "purple worm" }, { "quasit" },
-	{ "rust monster" }, { "snake" }, { "troll" }, { "umber hulk" },
-	{ "vampire" }, { "wraith" }, { "xorn" }, { "yeti" }, { "zombie" }
+	{ "aquator" }, { "bat" }, { "centaur" }, { "dragon" }, { "emu" },
+	{ "venus flytrap" }, { "griffin" }, { "hobgoblin" }, { "ice monster" },
+	{ "jabberwock" }, { "kobold" }, { "leprechaun" }, { "medusa" },
+	{ "nymph" }, { "orc" }, { "phantom" }, { "quasit" }, { "rattlesnake" },
+	{ "snake" }, { "troll" }, { "ur-vile" }, { "vampire" }, { "wraith" },
+	{ "xeroc" }, { "yeti" }, { "zombie" }
 };
 
 /*
@@ -40,9 +48,10 @@ MONST	monsters[] = {
  *	lock the score file.  If it takes too long, ask the user if
  *	they care to wait.  Return TRUE if the lock is successful.
  */
+bool
 s_lock_sc()
 {
-    register int cnt;
+    int cnt;
     static struct stat sbuf;
     time_t time();
 
@@ -52,7 +61,7 @@ over:
 	return TRUE;
     for (cnt = 0; cnt < 5; cnt++)
     {
-	sleep(1);
+	md_sleep(1);
 	if (creat(lockfile, 0000) >= 0)
 	    return TRUE;
     }
@@ -63,7 +72,7 @@ over:
     }
     if (time(NULL) - sbuf.st_mtime > 10)
     {
-	if (unlink(lockfile) < 0)
+	if (md_unlink(lockfile) < 0)
 	    return FALSE;
 	goto over;
     }
@@ -85,10 +94,10 @@ over:
 		}
 		if (time(NULL) - sbuf.st_mtime > 10)
 		{
-		    if (unlink(lockfile) < 0)
+		    if (md_unlink(lockfile) < 0)
 			return FALSE;
 		}
-		sleep(1);
+		md_sleep(1);
 	    }
 	else
 	    return FALSE;
@@ -99,29 +108,36 @@ over:
  * s_unlock_sc:
  *	Unlock the score file
  */
+
 s_unlock_sc()
 {
-    unlink(lockfile);
+    md_unlink(lockfile);
 }
 
 /*
  * s_encwrite:
  *	Perform an encrypted write
  */
-s_encwrite(start, size, outf)
-register char *start;
-unsigned int size;
-register FILE *outf;
-{
-    register char *ep;
 
-    ep = encstr;
+s_encwrite(char *start, unsigned int size, FILE *outf)
+{
+    char *e1, *e2, fb;
+    int temp;
+    extern char statlist[];
+
+    e1 = encstr;
+    e2 = statlist;
+    fb = frob;
 
     while (size--)
     {
-	putc(*start++ ^ *ep++, outf);
-	if (*ep == '\0')
-	    ep = encstr;
+	putc(*start++ ^ *e1 ^ *e2 ^ fb, outf);
+	temp = *e1++;
+	fb += temp * *e2++;
+	if (*e1 == '\0')
+	    e1 = encstr;
+	if (*e2 == '\0')
+	    e2 = statlist;
     }
 }
 
@@ -129,26 +145,32 @@ register FILE *outf;
  * s_encread:
  *	Perform an encrypted read
  */
-s_encread(start, size, inf)
-register char *start;
-unsigned int size;
-register int inf;
+
+s_encread(char *start, unsigned int size, int inf)
 {
-    register char *ep;
-    register int read_size;
+    char *e1, *e2, fb;
+    int temp;
+    int read_size;
+    extern char statlist[];
 
-    if ((read_size = read(inf, start, size)) == -1 || read_size == 0)
-	return read_size;
+    fb = frob;
 
-    ep = encstr;
+    if ((read_size = read(inf, start, size)) == 0 || read_size == -1)
+	return;
+
+    e1 = encstr;
+    e2 = statlist;
 
     while (size--)
     {
-	*start++ ^= *ep++;
-	if (*ep == '\0')
-	    ep = encstr;
+	*start++ ^= *e1 ^ *e2 ^ fb;
+	temp = *e1++;
+	fb += temp * *e2++;
+	if (*e1 == '\0')
+	    e1 = encstr;
+	if (*e2 == '\0')
+	    e2 = statlist;
     }
-    return read_size;
 }
 
 /*
@@ -156,17 +178,15 @@ register int inf;
  *	Convert a code to a monster name
  */
 char *
-s_killname(monst, doart)
-register char monst;
-bool doart;
+s_killname(char monst, bool doart)
 {
-    register char *sp;
-    register bool article;
+    char *sp;
+    bool article;
 
     article = TRUE;
     switch (monst)
     {
-	when 'a':
+	case 'a':
 	    sp = "arrow";
 	when 'b':
 	    sp = "bolt";
@@ -175,8 +195,11 @@ bool doart;
 	when 's':
 	    sp = "starvation";
 	    article = FALSE;
+	when 'h':
+	    sp = "hypothermia";
+	    article = FALSE;
 	otherwise:
-	    if (monst >= 'A' && monst <= 'Z')
+	    if (isupper(monst))
 		sp = monsters[monst-'A'].m_name;
 	    else
 	    {
@@ -198,8 +221,7 @@ bool doart;
  *	"an".
  */
 char *
-s_vowelstr(str)
-register char *str;
+s_vowelstr(char *str)
 {
     switch (*str)
     {

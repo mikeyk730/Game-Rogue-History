@@ -1,3 +1,16 @@
+/*
+ * new_level:
+ *	Dig and draw a new level
+ *
+ * @(#)new_level.c	4.38 (Berkeley) 02/05/99
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980-1983, 1985, 1999 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
+ */
+
 #include <curses.h>
 #include "rogue.h"
 
@@ -5,18 +18,12 @@
 #define MAXTREAS 10	/* maximum number of treasures in a treasure room */
 #define MINTREAS 2	/* minimum number of treasures in a treasure room */
 
-/*
- * new_level:
- *	Dig and draw a new level
- *
- * @(#)new_level.c	4.24 (NMT from Berkeley 5.2) 8/25/83
- */
 new_level()
 {
-    register int i;
-    register THING *tp;
-    register char *sp;
-    register THING **mp;
+    THING *tp;
+    PLACE *pp;
+    char *sp;
+    int i;
 
     player.t_flags &= ~ISHELD;	/* unhold when you go down just in case */
     if (level > max_level)
@@ -24,13 +31,12 @@ new_level()
     /*
      * Clean things off from last level
      */
-    clear();
-    for (sp = _level; sp < &_level[MAXCOLS*MAXLINES]; )
-	*sp++ = ' ';
-    for (sp = _flags; sp < &_flags[MAXCOLS*MAXLINES]; )
-	*sp++ = F_REAL;
-    for (mp = _monst; mp < &_monst[MAXCOLS*MAXLINES]; )
-	*mp++ = NULL;
+    for (pp = places; pp < &places[MAXCOLS*MAXLINES]; pp++)
+    {
+	pp->p_ch = ' ';
+	pp->p_flags = F_REAL;
+	pp->p_monst = NULL;
+    }
     clear();
     /*
      * Free up the monsters on the last level
@@ -75,16 +81,19 @@ new_level()
     /*
      * Place the staircase down.
      */
-    i = 0;
     find_floor((struct room *) NULL, &stairs, FALSE, FALSE);
     chat(stairs.y, stairs.x) = STAIRS;
+    seenstairs = FALSE;
+
+    for (tp = mlist; tp != NULL; tp = next(tp))
+	tp->t_room = roomin(&tp->t_pos);
+
     find_floor((struct room *) NULL, &hero, FALSE, TRUE);
     enter_room(&hero);
-    move(hero.y, hero.x);
-    addch(PLAYER);
+    mvaddch(hero.y, hero.x, PLAYER);
     if (on(player, SEEMONST))
 	turn_see(FALSE);
-    if (on(player, ISTrip))
+    if (on(player, ISHALU))
 	visuals();
 }
 
@@ -92,9 +101,10 @@ new_level()
  * rnd_room:
  *	Pick a room that is really there
  */
+int
 rnd_room()
 {
-    register int rm;
+    int rm;
 
     do
     {
@@ -107,10 +117,11 @@ rnd_room()
  * put_things:
  *	Put potions and scrolls on this level
  */
+
 put_things()
 {
-    register int i;
-    register THING *cur;
+    int i;
+    THING *obj;
 
     /*
      * Once you have found the amulet, the only way to get new stuff is
@@ -127,18 +138,18 @@ put_things()
      * Do MAXOBJ attempts to put things on a level
      */
     for (i = 0; i < MAXOBJ; i++)
-	if (rnd(100) < 35)
+	if (rnd(100) < 36)
 	{
 	    /*
 	     * Pick a new object and link it in the list
 	     */
-	    cur = new_thing();
-	    attach(lvl_obj, cur);
+	    obj = new_thing();
+	    attach(lvl_obj, obj);
 	    /*
 	     * Put it somewhere
 	     */
-	    find_floor((struct room *) NULL, &cur->o_pos, FALSE, FALSE);
-	    chat(cur->o_pos.y, cur->o_pos.x) = cur->o_type;
+	    find_floor((struct room *) NULL, &obj->o_pos, FALSE, FALSE);
+	    chat(obj->o_pos.y, obj->o_pos.x) = obj->o_type;
 	}
     /*
      * If he is really deep in the dungeon and he hasn't found the
@@ -146,17 +157,19 @@ put_things()
      */
     if (level >= AMULETLEVEL && !amulet)
     {
-	cur = new_item();
-	attach(lvl_obj, cur);
-	cur->o_hplus = cur->o_dplus = 0;
-	cur->o_damage = cur->o_hurldmg = "0d0";
-	cur->o_ac = 11;
-	cur->o_type = AMULET;
+	obj = new_item();
+	attach(lvl_obj, obj);
+	obj->o_hplus = 0;
+	obj->o_dplus = 0;
+	strncpy(obj->o_damage,"0x0",sizeof(obj->o_damage));
+        strncpy(obj->o_hurldmg,"0x0",sizeof(obj->o_hurldmg));
+	obj->o_arm = 11;
+	obj->o_type = AMULET;
 	/*
 	 * Put it somewhere
 	 */
-	find_floor((struct room *) NULL, &cur->o_pos, FALSE, FALSE);
-	chat(cur->o_pos.y, cur->o_pos.x) = AMULET;
+	find_floor((struct room *) NULL, &obj->o_pos, FALSE, FALSE);
+	chat(obj->o_pos.y, obj->o_pos.x) = AMULET;
     }
 }
 
@@ -166,13 +179,14 @@ put_things()
  */
 #define MAXTRIES 10	/* max number of tries to put down a monster */
 
+
 treas_room()
 {
-    register int nm;
-    register THING *tp;
-    register struct room *rp;
-    register int spots, num_monst;
-    coord mp;
+    int nm;
+    THING *tp;
+    struct room *rp;
+    int spots, num_monst;
+    static coord mp;
 
     rp = &rooms[rnd_room()];
     spots = (rp->r_max.y - 2) * (rp->r_max.x - 2) - MINTREAS;

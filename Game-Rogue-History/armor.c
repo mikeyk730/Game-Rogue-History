@@ -1,6 +1,12 @@
 /*
  * This file contains misc functions for dealing with armor
- * @(#)armor.c	4.9 (NMT from Berkeley 5.2) 8/25/83
+ * @(#)armor.c	4.14 (Berkeley) 02/05/99
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980-1983, 1985, 1999 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 #include <curses.h>
@@ -15,6 +21,8 @@ wear()
     register THING *obj;
     register char *sp;
 
+    if ((obj = get_item("wear", ARMOR)) == NULL)
+	return;
     if (cur_armor != NULL)
     {
 	addmsg("you are already wearing some");
@@ -24,8 +32,6 @@ wear()
 	after = FALSE;
 	return;
     }
-    if ((obj = get_item("wear", ARMOR)) == NULL)
-	return;
     if (obj->o_type != ARMOR)
     {
 	msg("you can't wear that");
@@ -63,8 +69,8 @@ take_off()
     if (terse)
 	addmsg("was");
     else
-	addmsg("you used to be ");
-    msg(" wearing %c) %s", pack_char(obj), inv_name(obj, TRUE));
+	addmsg("you used to be");
+    msg(" wearing %c) %s", obj->o_packch, inv_name(obj, TRUE));
 }
 
 /*

@@ -1,9 +1,14 @@
-
 /*
  * Special wizard commands (some of which are also non-wizard commands
  * under strange circumstances)
  *
- * @(#)wizard.c	4.16 (NMT from Berkeley 5.2) 8/25/83
+ * @(#)wizard.c	4.30 (Berkeley) 02/05/99
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980-1983, 1985, 1999 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 #include <curses.h>
@@ -14,74 +19,111 @@
  * whatis:
  *	What a certin object is
  */
-whatis(insist)
-bool insist;
+
+whatis(bool insist, int type)
 {
-    register THING *obj;
+    THING *obj;
 
     if (pack == NULL)
     {
-	msg("You don't have anything in your pack to identify");
+	msg("you don't have anything in your pack to identify");
 	return;
     }
 
     for (;;)
-	if ((obj = get_item("identify", 0)) == NULL && insist)
-	    msg("You must identify something");
+    {
+	obj = get_item("identify", type);
+	if (insist)
+	{
+	    if (n_objs == 0)
+		return;
+	    else if (obj == NULL)
+		msg("you must identify something");
+	    else if (type && obj->o_type != type &&
+	       !(type == R_OR_S && obj->o_type == RING || obj->o_type == STICK))
+		    msg("you must identify a %s", type_name(type));
+	    else
+		break;
+	}
 	else
 	    break;
+    }
 
-    if (!insist && obj == NULL)
+    if (obj == NULL)
 	return;
 
     switch (obj->o_type)
     {
-        when SCROLL:
-	    s_know[obj->o_which] = TRUE;
-	    if (s_guess[obj->o_which])
-	    {
-		cfree(s_guess[obj->o_which]);
-		s_guess[obj->o_which] = NULL;
-	    }
+        case SCROLL:
+	    set_know(obj, scr_info);
         when POTION:
-	    p_know[obj->o_which] = TRUE;
-	    if (p_guess[obj->o_which])
-	    {
-		cfree(p_guess[obj->o_which]);
-		p_guess[obj->o_which] = NULL;
-	    }
+	    set_know(obj, pot_info);
 	when STICK:
-	    ws_know[obj->o_which] = TRUE;
-	    obj->o_flags |= ISKNOW;
-	    if (ws_guess[obj->o_which])
-	    {
-		cfree(ws_guess[obj->o_which]);
-		ws_guess[obj->o_which] = NULL;
-	    }
+	    set_know(obj, ws_info);
         when WEAPON:
         case ARMOR:
 	    obj->o_flags |= ISKNOW;
         when RING:
-	    r_know[obj->o_which] = TRUE;
-	    obj->o_flags |= ISKNOW;
-	    if (r_guess[obj->o_which])
-	    {
-		cfree(r_guess[obj->o_which]);
-		r_guess[obj->o_which] = NULL;
-	    }
+	    set_know(obj, ring_info);
     }
     msg(inv_name(obj, FALSE));
 }
 
-#ifdef WIZARD
+/*
+ * set_know:
+ *	Set things up when we really know what a thing is
+ */
+
+set_know(THING *obj, struct obj_info *info)
+{
+    char **guess;
+
+    info[obj->o_which].oi_know = TRUE;
+    obj->o_flags |= ISKNOW;
+    guess = &info[obj->o_which].oi_guess;
+    if (*guess)
+    {
+	free(*guess);
+	*guess = NULL;
+    }
+}
+
+/*
+ * type_name:
+ *	Return a pointer to the name of the type
+ */
+char *
+type_name(int type)
+{
+    struct h_list *hp;
+    static struct h_list tlist[] = {
+	POTION,	 "potion",		FALSE,
+	SCROLL,	 "scroll",		FALSE,
+	FOOD,	 "food",		FALSE,
+	R_OR_S,	 "ring, wand or staff",	FALSE,
+	RING,	 "ring",		FALSE,
+	STICK,	 "wand or staff",	FALSE,
+	WEAPON,	 "weapon",		FALSE,
+	ARMOR,	 "suit of armor",	FALSE,
+    };
+
+    for (hp = tlist; hp->h_ch; hp++)
+	if (type == hp->h_ch)
+	    return hp->h_desc;
+    /* NOTREACHED */
+    return(0);
+}
+
+#ifdef MASTER
 /*
  * create_obj:
- *	Wizard command for getting anything he wants
+ *	wizard command for getting anything he wants
  */
+
 create_obj()
 {
-    register THING *obj;
-    register char ch, bless;
+    THING *obj;
+    char ch, bless;
 
     obj = new_item();
     msg("type of item: ");
@@ -109,11 +151,11 @@ create_obj()
 	}
 	else
 	{
-	    obj->o_ac = a_class[obj->o_which];
+	    obj->o_arm = a_class[obj->o_which];
 	    if (bless == '-')
-		obj->o_ac += rnd(3)+1;
+		obj->o_arm += rnd(3)+1;
 	    if (bless == '+')
-		obj->o_ac -= rnd(3)+1;
+		obj->o_arm -= rnd(3)+1;
 	}
     }
     else if (obj->o_type == RING)
@@ -128,7 +170,7 @@ create_obj()
 		mpos = 0;
 		if (bless == '-')
 		    obj->o_flags |= ISCURSED;
-		obj->o_ac = (bless == '-' ? -1 : rnd(2) + 1);
+		obj->o_arm = (bless == '-' ? -1 : rnd(2) + 1);
 	    when R_AGGR:
 	    case R_TELEPORT:
 		obj->o_flags |= ISCURSED;
@@ -148,18 +190,14 @@ create_obj()
  * telport:
  *	Bamf the hero someplace else
  */
+
 teleport()
 {
-    register int rm;
-    coord c;
+    static coord c;
 
-    mvaddch(hero.y, hero.x, chat(hero.y, hero.x));
-    do
-    {
-	rm = rnd_room();
-	rnd_pos(&rooms[rm], &c);
-    } until (step_ok(winat(c.y, c.x)));
-    if (&rooms[rm] != proom)
+    mvaddch(hero.y, hero.x, floor_at());
+    find_floor((struct room *) NULL, &c, FALSE, TRUE);
+    if (roomin(&c) != proom)
     {
 	leave_room(&hero);
 	hero = c;
@@ -173,12 +211,12 @@ teleport()
     mvaddch(hero.y, hero.x, PLAYER);
     /*
      * turn off ISHELD in case teleportation was done while fighting
-     * a Fungi
+     * a Flytrap
      */
     if (on(player, ISHELD)) {
 	player.t_flags &= ~ISHELD;
-	fung_hit = 0;
-	strcpy(monsters['F'-'A'].m_stats.s_dmg, "000d0");
+	vf_hit = 0;
+	strcpy(monsters['F'-'A'].m_stats.s_dmg, "000x0");
     }
     no_move = 0;
     count = 0;
@@ -186,51 +224,40 @@ teleport()
     flush_type();
 }
 
-#ifdef WIZARD
+#ifdef MASTER
 /*
  * passwd:
  *	See if user knows password
  */
+bool
 passwd()
 {
-    register char *sp, c;
-    char buf[MAXSTR], *crypt();
+    char *sp, c;
+    static char buf[MAXSTR];
 
     msg("wizard's Password:");
     mpos = 0;
     sp = buf;
-    while ((c = getchar()) != '\n' && c != '\r' && c != ESCAPE)
-#ifndef attron
-	if (c == _tty.sg_kill)
-#else	attron
-	if (c == killchar())
-#endif	attron
-	    sp = buf;
-#ifndef attron
-	else if (c == _tty.sg_erase && sp > buf)
-#else	attron
-	else if ((c == erasechar()) && sp > buf)
-#endif	attron
-	    sp--;
-	else
-	    *sp++ = c;
+    while ((c = readchar()) != '\n' && c != '\r' && c != ESCAPE)
+	*sp++ = c;
     if (sp == buf)
 	return FALSE;
     *sp = '\0';
-    return (strcmp("plus5",buf) == 0);
+    return (strcmp(PASSWD, md_crypt(buf, "mT")) == 0);
 }
 
 /*
  * show_map:
  *	Print out the map for the wizard
  */
+
 show_map()
 {
-    register int y, x, real;
+    int y, x, real;
 
     wclear(hw);
-    for (y = 1; y < LINES - 1; y++)
-	for (x = 0; x < COLS; x++)
+    for (y = 1; y < NUMLINES - 1; y++)
+	for (x = 0; x < NUMCOLS; x++)
 	{
 	    if (!(real = flat(y, x) & F_REAL))
 		wstandout(hw);
@@ -239,6 +266,6 @@ show_map()
 	    if (!real)
 		wstandend(hw);
 	}
-    show_win(hw, "---More (level map)---");
+    show_win("---More (level map)---");
 }
 #endif

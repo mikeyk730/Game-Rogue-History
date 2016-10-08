@@ -2,38 +2,49 @@
  * File for the fun ends
  * Death or a total win
  *
- * @(#)rip.c	4.32 (NMT from Berkeley 5.2) 8/25/83
+ * @(#)rip.c	4.57 (Berkeley) 02/05/99
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980-1983, 1985, 1999 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 #include <curses.h>
 #ifdef	attron
-#include <term.h>
-#endif	attron
+#endif	/* attron */
 #include <time.h>
 #include <signal.h>
 #include <sys/types.h>
-#include <pwd.h>
+#include <ctype.h>
+#include <stdio.h>
 #include "rogue.h"
 #include "score.h"
 
+#include <fcntl.h>
+
 #ifdef	attron
+int	_putchar(char c);
 # define	_puts(s)	tputs(s, 0, _putchar);
+# define	SO		enter_standout_mode
+# define	SE		exit_standout_mode
 #endif
 
 static char *rip[] = {
-"                       __________",
-"                      /          \\",
-"                     /    REST    \\",
-"                    /      IN      \\",
-"                   /     PEACE      \\",
-"                  /                  \\",
-"                  |                  |",
-"                  |                  |",
-"                  |   killed by a    |",
-"                  |                  |",
-"                  |       1984       |",
-"                 *|     *  *  *      | *",
-"         ________)/\\\\_//(\\/(/\\)/\\//\\/|_)_______",
+"                       __________\n",
+"                      /          \\\n",
+"                     /    REST    \\\n",
+"                    /      IN      \\\n",
+"                   /     PEACE      \\\n",
+"                  /                  \\\n",
+"                  |                  |\n",
+"                  |                  |\n",
+"                  |   killed by a    |\n",
+"                  |                  |\n",
+"                  |       1980       |\n",
+"                 *|     *  *  *      | *\n",
+"         ________)/\\\\_//(\\/(/\\)/\\//\\/|_)_______\n",
     0
 };
 
@@ -42,36 +53,57 @@ static char *rip[] = {
  *	Figure score and post it.
  */
 /* VARARGS2 */
-score(amount, flags, monst)
-int amount, flags;
-char monst;
-{
-    register SCORE *scp;
-    register int i;
-    register SCORE *sc2;
-    register FILE *outf;
-    register int prflags = 0;
-    register int (*fp)(), uid;
 
-    static SCORE top_ten[10];
-    static char  *reason[] = {
+score(int amount, int flags, char monst)
+{
+    SCORE *scp;
+    int i;
+    SCORE *sc2;
+    SCORE *top_ten, *endp;
+    FILE *outf;
+# ifdef MASTER
+    int prflags = 0;
+# endif
+    void (*fp)(int);
+    unsigned int uid;
+    static char *reason[] = {
 	"killed",
 	"quit",
 	"A total winner",
+	"killed with Amulet"
     };
-    int	endit();
 
     start_score();
 
-    if (flags != -1)
-	endwin();
+ if (flags >= 0
+#ifdef MASTER
+	    || wizard
+#endif
+	)
+    {
+	mvaddstr(LINES - 1, 0 , "[Press return to continue]");
+        refresh();
+        wgetnstr(stdscr,prbuf,80);
+ 	endwin();
+        printf("\n");
+        resetltchars();
+	/*
+	 * free up space to "guarantee" there is space for the top_ten
+	 */
+	delwin(stdscr);
+	delwin(curscr);
+	if (hw != NULL)
+	    delwin(hw);
+    }
 
     if (fd >= 0)
-	outf = fdopen(fd, "w");
+	outf = (FILE *)fdopen(fd, "w");
     else
 	return;
 
-    for (scp = top_ten; scp < &top_ten[10]; scp++)
+    top_ten = (SCORE *) malloc(numscores * sizeof (SCORE));
+    endp = &top_ten[numscores];
+    for (scp = top_ten; scp < endp; scp++)
     {
 	scp->sc_score = 0;
 	for (i = 0; i < MAXSTR; i++)
@@ -83,46 +115,46 @@ char monst;
     }
 
     signal(SIGINT, SIG_DFL);
-    if (flags != -1
-#ifdef WIZARD
-	    || wizard
-#endif
-	)
-    {
-	printf("[Press return to continue]");
-	fflush(stdout);
-	gets(prbuf);
-    }
-#ifdef WIZARD
+
+#ifdef MASTER
     if (wizard)
 	if (strcmp(prbuf, "names") == 0)
 	    prflags = 1;
 	else if (strcmp(prbuf, "edit") == 0)
 	    prflags = 2;
 #endif
-    encread((char *) top_ten, sizeof top_ten, fd);
+    rd_score(top_ten, fd);
+    fclose(outf);
+    close(fd);
+    open_score(0);
+    outf = (FILE *) fdopen(fd, "w");
     /*
      * Insert her in list if need be
      */
     sc2 = NULL;
     if (!noscore)
     {
-	uid = getuid();
-	for (scp = top_ten; scp < &top_ten[10]; scp++)
+	uid = md_getuid();
+	for (scp = top_ten; scp < endp; scp++)
 	    if (amount > scp->sc_score)
 		break;
-	    else if (flags != 2 && scp->sc_uid == uid && scp->sc_flags != 2)
-		scp = &top_ten[10];	/* only one score per nowin uid */
-	if (scp < &top_ten[10])
+	    else if (!allscore &&	/* only one score per nowin uid */
+		flags != 2 && scp->sc_uid == uid && scp->sc_flags != 2)
+		    scp = endp;
+	if (scp < endp)
 	{
-	    if (flags != 2)
-		for (sc2 = scp; sc2 < &top_ten[10]; sc2++)
+	    if (flags != 2 && !allscore)
+	    {
+		for (sc2 = scp; sc2 < endp; sc2++)
 		{
 		    if (sc2->sc_uid == uid && sc2->sc_flags != 2)
 			break;
 		}
+		if (sc2 >= endp)
+		    sc2 = endp - 1;
+	    }
 	    else
-		sc2 = &top_ten[9];
+		sc2 = endp - 1;
 	    while (sc2 > scp)
 	    {
 		*sc2 = sc2[-1];
@@ -143,65 +175,54 @@ char monst;
     /*
      * Print the list
      */
-    printf("\nTop Ten Rogueists:\nRank\tScore\tName\n");
-    for (scp = top_ten; scp < &top_ten[10]; scp++)
+    if (flags != -1)
+	putchar('\n');
+    printf("Top %s %s:\n", Numname, allscore ? "Scores" : "Rogueists");
+    printf("   Score Name\n");
+    for (scp = top_ten; scp < endp; scp++)
     {
-	int _putchar();
-
 	if (scp->sc_score) {
-#ifndef	attron
-	    if (sc2 == scp && SO)
-		_puts(SO);
-#else	attron
-	    if (sc2 == scp && enter_standout_mode)
-		_puts(enter_standout_mode);
-#endif	attron
-	    printf("%d\t%d\t%s: %s on level %d", scp - top_ten + 1,
+	    if (sc2 == scp)
+            md_raw_standout();
+	    printf("%2d %5d %s: %s on level %d", scp - top_ten + 1,
 		scp->sc_score, scp->sc_name, reason[scp->sc_flags],
 		scp->sc_level);
-	    if (scp->sc_flags == 0)
+	    if (scp->sc_flags == 0 || scp->sc_flags == 3)
 		printf(" by %s", killname((char) scp->sc_monster, TRUE));
+# ifdef MASTER
 	    if (prflags == 1)
 	    {
-		struct passwd *pp, *getpwuid();
-
-		if ((pp = getpwuid(scp->sc_uid)) == NULL)
-		    printf(" (%d)", scp->sc_uid);
-		else
-		    printf(" (%s)", pp->pw_name);
-		putchar('\n');
+	    printf(" (%s)", md_getrealname(scp->sc_uid));
 	    }
 	    else if (prflags == 2)
 	    {
 		fflush(stdout);
-		gets(prbuf);
+		fgets(prbuf,10,stdin);
 		if (prbuf[0] == 'd')
 		{
-		    for (sc2 = scp; sc2 < &top_ten[9]; sc2++)
+		    for (sc2 = scp; sc2 < endp - 1; sc2++)
 			*sc2 = *(sc2 + 1);
-		    top_ten[9].sc_score = 0;
+		    sc2 = endp - 1;
+		    sc2->sc_score = 0;
 		    for (i = 0; i < MAXSTR; i++)
-			top_ten[9].sc_name[i] = rnd(255);
-		    top_ten[9].sc_flags = RN;
-		    top_ten[9].sc_level = RN;
-		    top_ten[9].sc_monster = RN;
+			sc2->sc_name[i] = rnd(255);
+		    sc2->sc_flags = RN;
+		    sc2->sc_level = RN;
+		    sc2->sc_monster = RN;
 		    scp--;
 		}
 	    }
 	    else
-		printf(".\n");
-#ifndef	attron
-	    if (sc2 == scp && SE)
-		_puts(SE);
-#else	attron
-	    if (sc2 == scp && exit_standout_mode)
-		_puts(exit_standout_mode);
-#endif	attron
+# endif /* MASTER */
+                printf(".");
+	    if (sc2 == scp)
+		    md_raw_standend();
+            putchar('\n');
 	}
 	else
 	    break;
     }
-    fseek(outf, 0L, 0);
+    fseek(outf, 0L, SEEK_SET);
     /*
      * Update the list file
      */
@@ -210,7 +231,7 @@ char monst;
 	if (lock_sc())
 	{
 	    fp = signal(SIGINT, SIG_IGN);
-	    encwrite((char *) top_ten, sizeof top_ten, outf);
+	    wr_score(top_ten, outf);
 	    unlock_sc();
 	    signal(SIGINT, fp);
 	}
@@ -222,52 +243,77 @@ char monst;
  * death:
  *	Do something really fun when he dies
  */
-death(monst)
-register char monst;
+
+death(char monst)
 {
-    register char **dp = rip, *killer;
-    register struct tm *lt;
-    time_t date;
-    char buf[MAXSTR];
+    char **dp, *killer;
+    struct tm *lt;
+    static time_t date;
     struct tm *localtime();
 
     signal(SIGINT, SIG_IGN);
     purse -= purse / 10;
     signal(SIGINT, leave);
-    time(&date);
-    lt = localtime(&date);
     clear();
-    move(8, 0);
-    while (*dp)
-	printw("%s\n", *dp++);
-    mvaddstr(14, 28-((strlen(whoami)+1)/2), whoami);
-    sprintf(buf, "%d Au", purse);
-    mvaddstr(15, 28-((strlen(buf)+1)/2), buf);
     killer = killname(monst, FALSE);
-    mvaddstr(17, 28-((strlen(killer)+1)/2), killer);
-    if (monst == 's')
-	mvaddch(16, 32, ' ');
+    if (!tombstone)
+    {
+	mvprintw(LINES - 2, 0, "Killed by ");
+	killer = killname(monst, FALSE);
+	if (monst != 's' && monst != 'h')
+	    printw("a%s ", vowelstr(killer));
+	printw("%s with %d gold", killer, purse);
+    }
     else
-	mvaddstr(16, 33, vowelstr(killer));
-    mvaddstr(18, 28, sprintf(prbuf, "%2d", lt->tm_year));
-    move(LINES-1, 0);
+    {
+	time(&date);
+	lt = localtime(&date);
+	move(8, 0);
+	dp = rip;
+	while (*dp)
+	    addstr(*dp++);
+	mvaddstr(17, center(killer), killer);
+	if (monst == 's' || monst == 'h')
+	    mvaddch(16, 32, ' ');
+	else
+	    mvaddstr(16, 33, vowelstr(killer));
+	mvaddstr(14, center(whoami), whoami);
+	sprintf(prbuf, "%d Au", purse);
+	move(15, center(prbuf));
+	addstr(prbuf);
+	sprintf(prbuf, "%4d", 1900+lt->tm_year);
+	mvaddstr(18, 26, prbuf);
+    }
+    move(LINES - 1, 0);
     refresh();
-    mvprintf(0,0,"Doing score\n");
-    refresh();
-    score(purse, 0, monst);
-    exit(0);
+    score(purse, amulet ? 3 : 0, monst);
+    printf("[Press return to continue]");
+    fflush(stdout);
+    fgets(prbuf,10,stdin);
+    my_exit(0);
+}
+
+/*
+ * center:
+ *	Return the index to center the given string
+ */
+int
+center(char *str)
+{
+    return 28 - ((strlen(str) + 1) / 2);
 }
 
 /*
  * total_winner:
  *	Code for a winner
  */
+
 total_winner()
 {
-    register THING *obj;
-    register int worth;
-    register char c;
-    register int oldpurse;
+    THING *obj;
+    struct obj_info *op;
+    int worth = 0;
+    int oldpurse;
 
     clear();
     standout();
@@ -284,93 +330,75 @@ total_winner()
     standend();
     addstr("\nYou have joined the elite ranks of those who have escaped the\n");
     addstr("Dungeons of Doom alive.  You journey home and sell all your loot at\n");
-    addstr("a great profit and are admitted to the fighters guild.\n");
+    addstr("a great profit and are admitted to the Fighters' Guild.\n");
     mvaddstr(LINES - 1, 0, "--Press space to continue--");
     refresh();
     wait_for(' ');
     clear();
-    mvaddstr(0, 0, "   Worth  Item");
+    mvaddstr(0, 0, "   Worth  Item\n");
     oldpurse = purse;
-    for (c = 'a', obj = pack; obj != NULL; c++, obj = next(obj))
+    for (obj = pack; obj != NULL; obj = next(obj))
     {
 	switch (obj->o_type)
 	{
-	    when FOOD:
+	    case FOOD:
 		worth = 2 * obj->o_count;
 	    when WEAPON:
-		switch (obj->o_which)
-		{
-		    when MACE: worth = 8;
-		    when SWORD: worth = 15;
-		    when CROSSBOW: worth = 30;
-		    when ARROW: worth = 1;
-		    when DAGGER: worth = 2;
-		    when TWOSWORD: worth = 75;
-		    when DART: worth = 1;
-		    when BOW: worth = 15;
-		    when BOLT: worth = 1;
-		    when SPEAR: worth = 5;
-		}
+		worth = weap_info[obj->o_which].oi_worth;
 		worth *= 3 * (obj->o_hplus + obj->o_dplus) + obj->o_count;
 		obj->o_flags |= ISKNOW;
 	    when ARMOR:
-		switch (obj->o_which)
-		{
-		    when LEATHER: worth = 20;
-		    when RING_MAIL: worth = 25;
-		    when STUDDED_LEATHER: worth = 20;
-		    when SCALE_MAIL: worth = 30;
-		    when CHAIN_MAIL: worth = 75;
-		    when SPLINT_MAIL: worth = 80;
-		    when BANDED_MAIL: worth = 90;
-		    when PLATE_MAIL: worth = 150;
-		}
-		worth += (9 - obj->o_ac) * 100;
-		worth += (10 * (a_class[obj->o_which] - obj->o_ac));
+		worth = arm_info[obj->o_which].oi_worth;
+		worth += (9 - obj->o_arm) * 100;
+		worth += (10 * (a_class[obj->o_which] - obj->o_arm));
 		obj->o_flags |= ISKNOW;
 	    when SCROLL:
-		worth = s_magic[obj->o_which].mi_worth;
+		worth = scr_info[obj->o_which].oi_worth;
 		worth *= obj->o_count;
-		if (!s_know[obj->o_which])
+		op = &scr_info[obj->o_which];
+		if (!op->oi_know)
 		    worth /= 2;
-		s_know[obj->o_which] = TRUE;
+		op->oi_know = TRUE;
 	    when POTION:
-		worth = p_magic[obj->o_which].mi_worth;
+		worth = pot_info[obj->o_which].oi_worth;
 		worth *= obj->o_count;
-		if (!p_know[obj->o_which])
+		op = &pot_info[obj->o_which];
+		if (!op->oi_know)
 		    worth /= 2;
-		p_know[obj->o_which] = TRUE;
+		op->oi_know = TRUE;
 	    when RING:
-		worth = r_magic[obj->o_which].mi_worth;
+		op = &ring_info[obj->o_which];
+		worth = op->oi_worth;
 		if (obj->o_which == R_ADDSTR || obj->o_which == R_ADDDAM ||
 		    obj->o_which == R_PROTECT || obj->o_which == R_ADDHIT)
-			if (obj->o_ac > 0)
-			    worth += obj->o_ac * 100;
+			if (obj->o_arm > 0)
+			    worth += obj->o_arm * 100;
 			else
 			    worth = 10;
 		if (!(obj->o_flags & ISKNOW))
 		    worth /= 2;
 		obj->o_flags |= ISKNOW;
-		r_know[obj->o_which] = TRUE;
+		op->oi_know = TRUE;
 	    when STICK:
-		worth = ws_magic[obj->o_which].mi_worth;
+		op = &ws_info[obj->o_which];
+		worth = op->oi_worth;
 		worth += 20 * obj->o_charges;
 		if (!(obj->o_flags & ISKNOW))
 		    worth /= 2;
 		obj->o_flags |= ISKNOW;
-		ws_know[obj->o_which] = TRUE;
+		op->oi_know = TRUE;
 	    when AMULET:
 		worth = 1000;
 	}
 	if (worth < 0)
 	    worth = 0;
-	mvprintw(c - 'a' + 1, 0, "%c) %5d  %s", c, worth, inv_name(obj, FALSE));
+	printw("%c) %5d  %s\n", obj->o_packch, worth, inv_name(obj, FALSE));
 	purse += worth;
     }
-    mvprintw(c - 'a' + 1, 0,"   %5d  Gold Pieces          ", oldpurse);
+    printw("   %5d  Gold Pieces          ", oldpurse);
     refresh();
-    score(purse, 2);
-    exit(0);
+    score(purse, 2, ' ');
+    my_exit(0);
 }
 
 /*
@@ -378,33 +406,35 @@ total_winner()
  *	Convert a code to a monster name
  */
 char *
-killname(monst, doart)
-register char monst;
-bool doart;
+killname(char monst, bool doart)
 {
-    register char *sp;
-    register bool article;
+    struct h_list *hp;
+    char *sp;
+    bool article;
+    static struct h_list nlist[] = {
+	'a',	"arrow",		TRUE,
+	'b',	"bolt",			TRUE,
+	'd',	"dart",			TRUE,
+	'h',	"hypothermia",		FALSE,
+	's',	"starvation",		FALSE,
+	'\0'
+    };
 
-    sp = prbuf;
-    article = TRUE;
-    switch (monst)
+    if (isupper(monst))
     {
-	when 'a':
-	    sp = "arrow";
-	when 'b':
-	    sp = "bolt";
-	when 'd':
-	    sp = "dart";
-	when 's':
-	    sp = "starvation";
-	    article = FALSE;
-	otherwise:
-	    if (monst >= 'A' && monst <= 'Z')
-		sp = monsters[monst-'A'].m_name;
-	    else
+	sp = monsters[monst-'A'].m_name;
+	article = TRUE;
+    }
+    else
+    {
+	sp = "Wally the Wonder Badger";
+	article = FALSE;
+	for (hp = nlist; hp->h_ch; hp++)
+	    if (hp->h_ch == monst)
 	    {
-		sp = "God";
-		article = FALSE;
+		sp = hp->h_desc;
+		article = hp->h_print;
+		break;
 	    }
     }
     if (doart && article)
@@ -415,10 +445,29 @@ bool doart;
     return prbuf;
 }
 
+/*
+ * death_monst:
+ *	Return a monster appropriate for a random death.
+ */
+char
+death_monst()
+{
+    static char poss[] =
+    {
+	'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L',
+	'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X',
+	'Y', 'Z', 'a', 'b', 'h', 'd', 's',
+	' '	/* This is provided to generate the "Wally the Wonder Badger"
+		   message for killer */
+    };
+
+    return poss[rnd(sizeof poss / sizeof (char))];
+}
+
 #ifdef	attron
-_putchar(c)
-char c;
+int
+_putchar(char c)
 {
 	putchar(c);
 }
-#endif	attron
+#endif	/* attron */

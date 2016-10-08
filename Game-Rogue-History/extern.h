@@ -1,65 +1,106 @@
 /*
  * Defines for things used in mach_dep.c
  *
- * @(#)extern.h	4.7 (NMT from Berkeley 5.2) 8/25/83
+ * @(#)extern.h	4.35 (Berkeley) 02/05/99
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980-1983, 1985, 1999 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
+
 
 /*
  * Don't change the constants, since they are used for sizes in many
  * places in the program.
  */
 
-#define MAXSTR		80	/* maximum length of strings */
+#ifndef _WIN32
+#include <sys/ioctl.h>
+#endif
+#include <stdlib.h>
+
+#undef SIGTSTP
+
+#if defined(_WIN32) && !defined(__MINGW32__)
+#ifdef _PATH_MAX
+#define PATH_MAX _PATH_MAX
+#endif
+#ifdef _MAX_PATH
+#define PATH_MAX _MAX_PATH
+#endif
+#endif
+#include <stdlib.h>
+#define MAXSTR		1024	/* maximum length of strings */
 #define MAXLINES	32	/* maximum number of screen lines used */
 #define MAXCOLS		80	/* maximum number of screen columns used */
 
 #define RN		(((seed = seed*11109+13849) >> 16) & 0xffff)
+#ifdef CTRL
+#undef CTRL
+#endif
+#define CTRL(c)		(c & 037)
 
 /*
  * Now all the global variables
  */
 
-extern bool	after, amulet, askme, door_stop, fight_flush,
-		firstmove, in_shell, jump, noscore, p_know[], passgo,
-		playing, r_know[], running, s_know[], save_msg,
-		terse, wizard, ws_know[];
+extern bool	got_ltc, in_shell, wizard;
 
-extern char	_flags[], _level[], *a_names[], file_name[], fruit[],
-		home[], huh[], *inv_t_name[], outbuf[], *p_colors[],
-		*p_guess[], prbuf[], *r_guess[], *r_stones[], *release,
-		runch, *s_guess[], *s_names[], take, *w_names[],
-		whoami[], *ws_guess[], *ws_made[], *ws_type[];
+extern char	fruit[], orig_dsusp, prbuf[], whoami[];
 
-extern int	a_chances[], a_class[], count, dnum, food_left,
-		fung_hit, fd, group, hungry_state, inpack, inv_type,
-		lastscore, level, max_level, mpos, no_command, no_food,
-		no_move, ntraps, purse, quiet, seenstairs, total;
+extern int	fd;
 
-extern long	seed;
-
-extern WINDOW	*hw;
+#ifdef TIOCGLTC
+extern struct ltchars	ltc;
+#endif /* TIOCGLTC */
 
 /*
  * Function types
  */
 
-#ifdef NMTVAX
-#	ifdef unctrl
-#	undef unctrl
-#	endif
-#endif
+#include <stdlib.h>
 
-char	*brk(), *charge_str(), *ctime(), *getenv(), *inv_name(),
-	*killname(), *malloc(), *nothing(), *num(), *ring_num(),
-	*rnd_color(), *sbrk(), *sprintf(), *strcat(), *strcpy(),
-	*tr_name(), *unctrl(), *vowelstr();
+void    auto_save(int);
+int	come_down();
+int	doctor();
+int	end_line();
+void    endit(int sig);
+int	fatal();
+int	getltchars();
+int	land();
+void    leave(int);
+int	my_exit();
+int	nohaste();
+int	playit();
+void    playltchars(void);
+int	print_disc(char);
+void    quit(int);
+void    resetltchars(void);
+int	rollwand();
+int	runners();
+int	set_order();
+int	sight();
+int	stomach();
+int	swander();
+int	tstp();
+int	unconfuse();
+int	unsee();
+int	visuals();
 
-int	auto_save(), come_down(), doctor(), endit(), leave(),
-	nohaste(), quit(), rollwand(), runners(), sight(), stomach(),
-	swander(), tstp(), turn_see(), unconfuse(), unsee(), visuals();
+char	add_line(char *fmt, char *arg);
+
+char	*killname(char monst, bool doart);
+char	*nothing(char type);
+char	*type_name(int type);
 
 #ifdef CHECKTIME
 int	checkout();
 #endif
 
-long	lseek(), time();
+char *md_getusername();
+char *md_getroguedir();
+char *md_crypt();
+char *md_getpass();
+char *md_gethomedir();

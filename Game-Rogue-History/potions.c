@@ -1,21 +1,65 @@
 /*
  * Function(s) for dealing with potions
  *
- * @(#)potions.c	4.30 (NMT from Berkeley 5.2) 8/25/83
+ * @(#)potions.c	4.46 (Berkeley) 06/07/83
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980-1983, 1985, 1999 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 #include <curses.h>
 #include <ctype.h>
 #include "rogue.h"
 
+typedef struct
+{
+    int pa_flags;
+    int (*pa_daemon)();
+    int pa_time;
+    char *pa_high, *pa_straight;
+} PACT;
+
+static PACT p_actions[] =
+{
+	{ ISHUH,	unconfuse,	HUHDURATION,	/* P_CONFUSE */
+		"what a tripy feeling!",
+		"wait, what's going on here. Huh? What? Who?" },
+	{ ISHALU,	come_down,	SEEDURATION,	/* P_LSD */
+		"Oh, wow!  Everything seems so cosmic!",
+		"Oh, wow!  Everything seems so cosmic!" },
+	{ 0,		NULL,	0 },			/* P_POISON */
+	{ 0,		NULL,	0 },			/* P_STRENGTH */
+	{ CANSEE,	unsee,	SEEDURATION,		/* P_SEEINVIS */
+		prbuf,
+		prbuf },
+	{ 0,		NULL,	0 },			/* P_HEALING */
+	{ 0,		NULL,	0 },			/* P_MFIND */
+	{ 0,		NULL,	0 },			/* P_TFIND  */
+	{ 0,		NULL,	0 },			/* P_RAISE */
+	{ 0,		NULL,	0 },			/* P_XHEAL */
+	{ 0,		NULL,	0 },			/* P_HASTE */
+	{ 0,		NULL,	0 },			/* P_RESTORE */
+	{ ISBLIND,	sight,	SEEDURATION,		/* P_BLIND */
+		"oh, bummer!  Everything is dark!  Help!",
+		"a cloak of darkness falls around you" },
+	{ ISLEVIT,	land,	HEALTIME,		/* P_LEVIT */
+		"oh, wow!  You're floating in the air!",
+		"you start to float in the air" }
+};
+
 /*
  * quaff:
  *	Quaff a potion from the pack
  */
+
 quaff()
 {
-    register THING *obj, *th;
-    register bool discardit = FALSE;
+    THING *obj, *tp, *mp;
+    bool discardit = FALSE;
+    bool show, trip;
 
     obj = get_item("quaff", POTION);
     /*
@@ -37,41 +81,31 @@ quaff()
     /*
      * Calculate the effect it has on the poor guy.
      */
-    del_obj = obj;
+    trip = on(player, ISHALU);
+    discardit = (obj->o_count == 1);
+    leave_pack(obj, FALSE, FALSE);
     switch (obj->o_which)
     {
-	when P_CONFUSE:
-	    p_know[P_CONFUSE] = TRUE;
-	    if (!on(player, ISHUH))
-	    {
-		if (on(player, ISHUH))
-		    lengthen(unconfuse, rnd(8)+HUHDURATION);
-		else
-		    fuse(unconfuse, 0, rnd(8)+HUHDURATION, AFTER);
-		player.t_flags |= ISHUH;
-		if (on(player, ISTrip))
-		    msg("what a tripy feeling!");
-		else
-		    msg("wait, what's going on here. Huh? What? Who?");
-	    }
+	case P_CONFUSE:
+	    do_pot(P_CONFUSE, !trip);
 	when P_POISON:
-	    p_know[P_POISON] = TRUE;
-	    if (!ISWEARING(R_SUSTSTR))
+	    pot_info[P_POISON].oi_know = TRUE;
+	    if (ISWEARING(R_SUSTSTR))
+		msg("you feel momentarily sick");
+	    else
 	    {
-		chg_str(-(rnd(3)+1));
+		chg_str(-(rnd(3) + 1));
 		msg("you feel very sick now");
 		come_down();
 	    }
-	    else
-		msg("you feel momentarily sick");
 	when P_HEALING:
-	    p_know[P_HEALING] = TRUE;
+	    pot_info[P_HEALING].oi_know = TRUE;
 	    if ((pstats.s_hpt += roll(pstats.s_lvl, 4)) > max_hp)
 		pstats.s_hpt = ++max_hp;
 	    sight();
 	    msg("you begin to feel better");
 	when P_STRENGTH:
-	    p_know[P_STRENGTH] = TRUE;
+	    pot_info[P_STRENGTH].oi_know = TRUE;
 	    chg_str(1);
 	    msg("you feel stronger, now.  What bulging muscles!");
 	when P_MFIND:
@@ -79,79 +113,68 @@ quaff()
 	    fuse(turn_see, TRUE, HUHDURATION, AFTER);
 	    if (!turn_see(FALSE))
 		msg("you have a %s feeling for a moment, then it passes",
-		    on(player, ISTrip) ? "normal" : "strange");
+		    choose_str("normal", "strange"));
 	when P_TFIND:
 	    /*
 	     * Potion of magic detection.  Show the potions and scrolls
 	     */
+	    show = FALSE;
 	    if (lvl_obj != NULL)
 	    {
-		register THING *tp;
-		register bool show;
-
-		show = FALSE;
 		wclear(hw);
 		for (tp = lvl_obj; tp != NULL; tp = next(tp))
 		{
 		    if (is_magic(tp))
 		    {
 			show = TRUE;
-			mvwaddch(hw, tp->o_pos.y, tp->o_pos.x, MAGIC);
-			p_know[P_TFIND] = TRUE;
+			wmove(hw, tp->o_pos.y, tp->o_pos.x);
+			waddch(hw, MAGIC);
+			pot_info[P_TFIND].oi_know = TRUE;
 		    }
 		}
-		for (th = mlist; th != NULL; th = next(th))
+		for (mp = mlist; mp != NULL; mp = next(mp))
 		{
-		    for (tp = th->t_pack; tp != NULL; tp = next(tp))
+		    for (tp = mp->t_pack; tp != NULL; tp = next(tp))
 		    {
 			if (is_magic(tp))
 			{
 			    show = TRUE;
-			    mvwaddch(hw, th->t_pos.y, th->t_pos.x, MAGIC);
-			    p_know[P_TFIND] = TRUE;
+			    wmove(hw, mp->t_pos.y, mp->t_pos.x);
+			    waddch(hw, MAGIC);
 			}
 		    }
 		}
-		if (show)
-		{
-		    show_win(hw, 
-			"You sense the presence of magic on this level.--More--");
-		    break;
-		}
 	    }
-	    msg("you have a %s feeling for a moment, then it passes",
-		on(player, ISTrip) ? "normal" : "strange");
-	when P_LSD:
-	    p_know[P_LSD] = TRUE;
-	    if (!on(player, ISTrip))
+	    if (show)
 	    {
-		player.t_flags |= ISTrip;
-		fuse(come_down, 0, SEEDURATION, AFTER);
-		daemon(visuals, 0, AFTER);
+		pot_info[P_TFIND].oi_know = TRUE;
+		show_win("You sense the presence of magic on this level.--More--");
+	    }
+	    else
+		msg("you have a %s feeling for a moment, then it passes",
+		    choose_str("normal", "strange"));
+	when P_LSD:
+	    if (!trip)
+	    {
 		if (on(player, SEEMONST))
 		    turn_see(FALSE);
+		start_daemon(visuals, 0, BEFORE);
 		seenstairs = seen_stairs();
 	    }
-	    else
-		lengthen(come_down, SEEDURATION);
-	    msg("Oh, wow!  Everything seems so cosmic!");
+	    do_pot(P_LSD, TRUE);
 	when P_SEEINVIS:
-	    if (on(player, CANSEE))
-		lengthen(unsee, SEEDURATION);
-	    else
-	    {
-		fuse(unsee, 0, SEEDURATION, AFTER);
+	    sprintf(prbuf, "this potion tastes like %s juice", fruit);
+	    show = on(player, CANSEE);
+	    do_pot(P_SEEINVIS, FALSE);
+	    if (!show)
 		invis_on();
-		look(FALSE);
-	    }
 	    sight();
-	    msg("this potion tastes like %s juice", fruit);
 	when P_RAISE:
-	    p_know[P_RAISE] = TRUE;
+	    pot_info[P_RAISE].oi_know = TRUE;
 	    msg("you suddenly feel much more skillful");
 	    raise_level();
 	when P_XHEAL:
-	    p_know[P_XHEAL] = TRUE;
+	    pot_info[P_XHEAL].oi_know = TRUE;
 	    if ((pstats.s_hpt += roll(pstats.s_lvl, 8)) > max_hp)
 	    {
 		if (pstats.s_hpt > max_hp + pstats.s_lvl + 1)
@@ -162,90 +185,91 @@ quaff()
 	    come_down();
 	    msg("you begin to feel much better");
 	when P_HASTE:
-	    p_know[P_HASTE] = TRUE;
+	    pot_info[P_HASTE].oi_know = TRUE;
+	    after = FALSE;
 	    if (add_haste(TRUE))
 		msg("you feel yourself moving much faster");
 	when P_RESTORE:
 	    if (ISRING(LEFT, R_ADDSTR))
-		add_str(&pstats.s_str, -cur_ring[LEFT]->o_ac);
+		add_str(&pstats.s_str, -cur_ring[LEFT]->o_arm);
 	    if (ISRING(RIGHT, R_ADDSTR))
-		add_str(&pstats.s_str, -cur_ring[RIGHT]->o_ac);
+		add_str(&pstats.s_str, -cur_ring[RIGHT]->o_arm);
 	    if (pstats.s_str < max_stats.s_str)
 		pstats.s_str = max_stats.s_str;
 	    if (ISRING(LEFT, R_ADDSTR))
-		add_str(&pstats.s_str, cur_ring[LEFT]->o_ac);
+		add_str(&pstats.s_str, cur_ring[LEFT]->o_arm);
 	    if (ISRING(RIGHT, R_ADDSTR))
-		add_str(&pstats.s_str, cur_ring[RIGHT]->o_ac);
+		add_str(&pstats.s_str, cur_ring[RIGHT]->o_arm);
 	    msg("hey, this tastes great.  It make you feel warm all over");
 	when P_BLIND:
-	    p_know[P_BLIND] = TRUE;
-	    if (!on(player, ISBLIND))
-	    {
-		player.t_flags |= ISBLIND;
-		fuse(sight, 0, SEEDURATION, AFTER);
-		look(FALSE);
-	    }
-	    else
-		lengthen(sight, SEEDURATION);
-	    if (on(player, ISTrip))
-		msg("oh, bummer!  Everything is dark!  Help!");
-	    else
-		msg("a cloak of darkness falls around you");
-	when P_NOP:
-	    if (on(player, ISTrip))
-		msg("this potion tastes pretty");
-	    else
-		msg("this potion tastes extremely dull");
+	    do_pot(P_BLIND, TRUE);
+	when P_LEVIT:
+	    do_pot(P_LEVIT, TRUE);
+#ifdef MASTER
 	otherwise:
 	    msg("what an odd tasting potion!");
 	    return;
+#endif
     }
     status();
     /*
      * Throw the item away
      */
-    inpack--;
-    if (obj->o_count > 1)
-	obj->o_count--;
-    else
-    {
-	detach(pack, obj);
-        discardit = TRUE;
-    }
 
-    call_it(p_know[obj->o_which], &p_guess[obj->o_which]);
+    call_it(&pot_info[obj->o_which]);
 
     if (discardit)
 	discard(obj);
-    del_obj = NULL;
+    return;
+}
+
+/*
+ * is_magic:
+ *	Returns true if an object radiates magic
+ */
+bool
+is_magic(THING *obj)
+{
+    switch (obj->o_type)
+    {
+	case ARMOR:
+	    return (obj->o_flags&ISPROT) || obj->o_arm != a_class[obj->o_which];
+	case WEAPON:
+	    return obj->o_hplus != 0 || obj->o_dplus != 0;
+	case POTION:
+	case SCROLL:
+	case STICK:
+	case RING:
+	case AMULET:
+	    return TRUE;
+    }
+    return FALSE;
 }
 
 /*
  * invis_on:
  *	Turn on the ability to see invisible
  */
+
 invis_on()
 {
-    register THING *th;
+    THING *mp;
 
     player.t_flags |= CANSEE;
-    for (th = mlist; th != NULL; th = next(th))
-	if (on(*th, ISINVIS) && see_monst(th) && !on(player, ISTrip))
-	{
-	    move(th->t_pos.y, th->t_pos.x);
-	    addch(th->t_disguise);
-	}
+    for (mp = mlist; mp != NULL; mp = next(mp))
+	if (on(*mp, ISINVIS) && see_monst(mp) && !on(player, ISHALU))
+	    mvaddch(mp->t_pos.y, mp->t_pos.x, mp->t_disguise);
 }
 
 /*
  * turn_see:
  *	Put on or off seeing monsters on this level
  */
-turn_see(turn_off)
-register bool turn_off;
+bool
+turn_see(bool turn_off)
 {
-    register THING *mp;
-    register bool can_see, add_new;
+    THING *mp;
+    bool can_see, add_new;
 
     add_new = FALSE;
     for (mp = mlist; mp != NULL; mp = next(mp))
@@ -261,7 +285,7 @@ register bool turn_off;
 	{
 	    if (!can_see)
 		standout();
-	    if (!on(player, ISTrip))
+	    if (!on(player, ISHALU))
 		addch(mp->t_type);
 	    else
 		addch(rnd(26) + 'A');
@@ -283,11 +307,13 @@ register bool turn_off;
  * seen_stairs:
  *	Return TRUE if the player has seen the stairs
  */
+bool
 seen_stairs()
 {
-    register THING	*tp;
+    THING	*tp;
 
-    if (mvinch(stairs.y, stairs.x) == STAIRS)	/* it's on the map */
+    move(stairs.y, stairs.x);
+    if (inch() == STAIRS)			/* it's on the map */
 	return TRUE;
     if (ce(hero, stairs))			/* It's under him */
 	return TRUE;
@@ -305,4 +331,41 @@ seen_stairs()
 		return TRUE;			/* it must have moved there */
     }
     return FALSE;
+}
+
+/*
+ * raise_level:
+ *	The guy just magically went up a level.
+ */
+
+raise_level()
+{
+    pstats.s_exp = e_levels[pstats.s_lvl-1] + 1L;
+    check_level();
+}
+
+/*
+ * do_pot:
+ *	Do a potion with standard setup.  This means it uses a fuse and
+ *	turns on a flag
+ */
+
+do_pot(int type, bool knowit)
+{
+    PACT *pp;
+    int t;
+
+    pp = &p_actions[type];
+    if (!pot_info[type].oi_know)
+	pot_info[type].oi_know = knowit;
+    t = spread(pp->pa_time);
+    if (!on(player, pp->pa_flags))
+    {
+	player.t_flags |= pp->pa_flags;
+	fuse(pp->pa_daemon, 0, t, AFTER);
+	look(FALSE);
+    }
+    else
+	lengthen(pp->pa_daemon, t);
+    msg(choose_str(pp->pa_high, pp->pa_straight));
 }

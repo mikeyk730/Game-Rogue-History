@@ -1,26 +1,66 @@
 /*
  * All the fighting gets done here
  *
- * @(#)fight.c	4.38 (NMT from Berkeley 5.2) 8/25/83
+ * @(#)fight.c	4.67 (Berkeley) 09/06/83
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980-1983, 1985, 1999 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 #include <curses.h>
-#include <unctrl.h>
+#include <string.h>
 #include <ctype.h>
 #include "rogue.h"
 
-long e_levels[] = {
-    10L,20L,40L,80L,160L,320L,640L,1280L,2560L,5120L,10240L,20480L,
-    40920L, 81920L, 163840L, 327680L, 655360L, 1310720L, 2621440L, 0L
+#define	EQSTR(a, b)	(strcmp(a, b) == 0)
+
+char *h_names[] = {		/* strings for hitting */
+	" scored an excellent hit on ",
+	" hit ",
+	" have injured ",
+	" swing and hit ",
+	" scored an excellent hit on ",
+	" hit ",
+	" has injured ",
+	" swings and hits "
+};
+
+char *m_names[] = {		/* strings for missing */
+	" miss",
+	" swing and miss",
+	" barely miss",
+	" don't hit",
+	" misses",
+	" swings and misses",
+	" barely misses",
+	" doesn't hit",
+};
+
+/*
+ * adjustments to hit probabilities due to strength
+ */
+static int str_plus[] = {
+    -7, -6, -5, -4, -3, -2, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1,
+    1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3,
+};
+
+/*
+ * adjustments to damage done due to strength
+ */
+static int add_dam[] = {
+    -7, -6, -5, -4, -3, -2, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 3,
+    3, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6
 };
 
 /*
  * fight:
  *	The player attacks the monster.
  */
-fight(mp, mn, weap, thrown)
+fight(mp, weap, thrown)
 register coord *mp;
-char mn;
 register THING *weap;
 bool thrown;
 {
@@ -31,8 +71,7 @@ bool thrown;
     /*
      * Find the monster we want to fight
      */
-#ifdef WIZARD
-    debug("Fight()");
+#ifdef MASTER
     if ((tp = moat(mp->y, mp->x)) == NULL)
 	debug("Fight what @ %d,%d", mp->y, mp->x);
 #else
@@ -42,63 +81,55 @@ bool thrown;
      * Since we are fighting, things are not quiet so no healing takes
      * place.
      */
-    count = quiet = 0;
+    count = 0;
+    quiet = 0;
     runto(mp);
     /*
-     * Let him know it was really a mimic (if it was one).
+     * Let him know it was really a xeroc (if it was one).
      */
     ch = '\0';
-    if (tp->t_type == 'M' && tp->t_disguise != 'M' && !on(player, ISBLIND))
+    if (tp->t_type == 'X' && tp->t_disguise != 'X' && !on(player, ISBLIND))
     {
-	tp->t_disguise = 'M';
-	if (on(player, ISTrip)) {
+	tp->t_disguise = 'X';
+	if (on(player, ISHALU)) {
 	    ch = rnd(26) + 'A';
-	    mname = monsters[ch - 'A'].m_name;
 	    mvaddch(tp->t_pos.y, tp->t_pos.x, ch);
 	}
-	else
-	    mname = monsters['M'-'A'].m_name;
-	if (on(player, ISTrip))
-	    msg("wait!  That's a monster!");
-	else
-	    msg("wait!  That's a mimic!");
+	msg(choose_str("heavy!  That's a nasty critter!",
+		       "wait!  That's a xeroc!"));
 	if (!thrown)
 	    return FALSE;
     }
-    if (on(player, ISBLIND) ||
-       (on(*tp, ISINVIS) && !on(player, CANSEE|SEEMONST)))
-	    mname = (terse ? "it" : "something");
-    else if (on(player, ISTrip))
-	mname = monsters[toascii(mvinch(tp->t_pos.y, tp->t_pos.x))-'A'].m_name;
-    else
-	mname = monsters[mn-'A'].m_name;
+    mname = set_mname(tp);
     did_hit = FALSE;
+    has_hit = (terse && !to_death);
     if (roll_em(&player, tp, weap, thrown))
     {
 	did_hit = FALSE;
 	if (thrown)
-	    thunk(weap, mname);
+	    thunk(weap, mname, terse);
 	else
-	    hit(NULL, mname);
+	    hit((char *) NULL, mname, terse);
 	if (on(player, CANHUH))
 	{
 	    did_hit = TRUE;
 	    tp->t_flags |= ISHUH;
 	    player.t_flags &= ~CANHUH;
-	    msg("your hands stop glowing %s",
-		on(player, ISTrip) ? rnd_color() : "red");
+	    endmsg();
+	    has_hit = FALSE;
+	    msg("your hands stop glowing %s", pick_color("red"));
 	}
 	if (tp->t_stats.s_hpt <= 0)
 	    killed(tp, TRUE);
 	else if (did_hit && !on(player, ISBLIND))
-	    msg("the %s appears confused", mname);
+	    msg("%s appears confused", mname);
 	did_hit = TRUE;
     }
     else
 	if (thrown)
-	    bounce(weap, mname);
+	    bounce(weap, mname, terse);
 	else
-	    miss(NULL, mname);
+	    miss((char *) NULL, mname, terse);
     return did_hit;
 }
 
@@ -109,90 +140,92 @@ bool thrown;
 attack(mp)
 register THING *mp;
 {
-    register char *mname, ch;
+    register char *mname;
+    register int oldhp;
 
     /*
      * Since this is an attack, stop running and any healing that was
      * going on at the time.
      */
     running = FALSE;
-    count = quiet = 0;
-    if (mp->t_type == 'M' && mp->t_disguise != 'M' && !on(player, ISBLIND))
+    count = 0;
+    quiet = 0;
+    if (to_death && !on(*mp, ISTARGET))
     {
-	mp->t_disguise = 'M';
-	if (on(player, ISTrip))
+	to_death = FALSE;
+	kamikaze = FALSE;
+    }
+    if (mp->t_type == 'X' && mp->t_disguise != 'X' && !on(player, ISBLIND))
+    {
+	mp->t_disguise = 'X';
+	if (on(player, ISHALU))
 	    mvaddch(mp->t_pos.y, mp->t_pos.x, rnd(26) + 'A');
     }
-    if (on(player, ISBLIND) ||
-       (on(*mp, ISINVIS) && !on(player, CANSEE|SEEMONST)))
-	    mname = (terse ? "it" : "something");
-    else if (on(player, ISTrip)) {
-	ch = toascii(mvinch(mp->t_pos.y, mp->t_pos.x));
-	if (!isupper(ch))
-	    addch(ch = rnd(26) + 'A');
-	mname = monsters[ch-'A'].m_name;
-    }
-    else
-	mname = monsters[mp->t_type-'A'].m_name;
-    if (roll_em(mp, &player, NULL, FALSE))
+    mname = set_mname(mp);
+    oldhp = pstats.s_hpt;
+    if (roll_em(mp, &player, (THING *) NULL, FALSE))
     {
-	if (mp->t_type != 'E')
-	    hit(mname, NULL);
+	if (mp->t_type != 'I')
+	{
+	    if (has_hit)
+		addmsg(".  ");
+	    hit(mname, (char *) NULL, FALSE);
+	}
+	else
+	    if (has_hit)
+		endmsg();
+	has_hit = FALSE;
 	if (pstats.s_hpt <= 0)
 	    death(mp->t_type);	/* Bye bye life ... */
+	else if (!kamikaze)
+	{
+	    oldhp -= pstats.s_hpt;
+	    if (oldhp > max_hit)
+		max_hit = oldhp;
+	    if (pstats.s_hpt <= max_hit)
+		to_death = FALSE;
+	}
 	if (!on(*mp, ISCANC))
 	    switch (mp->t_type)
 	    {
-		when 'R':
+		case 'A':
 		    /*
-		     * If a rust monster hits, you lose armor, unless
-		     * that armor is leather or there is a magic ring
+		     * If an aquator hits, you can lose armor class.
 		     */
-		    if (cur_armor != NULL && cur_armor->o_ac < 9
-			&& cur_armor->o_which != LEATHER)
-			    if (ISWEARING(R_SUSTARM))
-				msg("The rust vanishes instantly");
-			    else
-			    {
-				cur_armor->o_ac++;
-				if (!terse)
-				    msg("your armor appears to be weaker now. Oh my!");
-				else
-				    msg("your armor weakens");
-			    }
-		when 'E':
+		    rust_armor(cur_armor);
+		when 'I':
 		    /*
-		     * The gaze of the floating eye hypnotizes you
+		     * The ice monster freezes you
 		     */
-		    if (on(player, ISBLIND))
-			break;
 		    player.t_flags &= ~ISRUN;
 		    if (!no_command)
 		    {
-			addmsg("you are transfixed");
+			addmsg("you are frozen");
 			if (!terse)
-			    addmsg(" by the gaze of the %s", mname);
+			    addmsg(" by the %s", mname);
 			endmsg();
 		    }
 		    no_command += rnd(2) + 2;
-		when 'A':
+		    if (no_command > BORE_LEVEL)
+			death('h');
+		when 'R':
 		    /*
-		     * Ants have poisonous bites
+		     * Rattlesnakes have poisonous bites
 		     */
 		    if (!save(VS_POISON))
 			if (!ISWEARING(R_SUSTSTR))
 			{
 			    chg_str(-1);
 			    if (!terse)
-				msg("you feel a sting in your arm and now feel weaker");
+				msg("you feel a bite in your leg and now feel weaker");
 			    else
-				msg("a sting has weakened you");
+				msg("a bite has weakened you");
 			}
-			else
+			else if (!to_death)
 			    if (!terse)
-				msg("a sting momentarily weakens you");
+				msg("a bite momentarily weakens you");
 			    else
-				msg("sting has no effect");
+				msg("bite has no effect");
 		when 'W':
 		case 'V':
 		    /*
@@ -217,21 +250,23 @@ register THING *mp;
 			    fewer = roll(1, 10);
 			}
 			else
-			    fewer = roll(1, 5);
+			    fewer = roll(1, 3);
 			pstats.s_hpt -= fewer;
 			max_hp -= fewer;
-			if (pstats.s_hpt < 1)
+			if (pstats.s_hpt <= 0)
 			    pstats.s_hpt = 1;
-			if (max_hp < 1)
+			if (max_hp <= 0)
 			    death(mp->t_type);
 			msg("you suddenly feel weaker");
 		    }
 		when 'F':
 		    /*
-		     * Violet fungi stops the poor guy from moving
+		     * Venus Flytrap stops the poor guy from moving
 		     */
 		    player.t_flags |= ISHELD;
-		    sprintf(monsters['F'-'A'].m_stats.s_dmg,"%dd1",++fung_hit);
+		    sprintf(monsters['F'-'A'].m_stats.s_dmg,"%dx1", ++vf_hit);
+		    if (--pstats.s_hpt <= 0)
+			death('F');
 		when 'L':
 		{
 		    /*
@@ -245,7 +280,8 @@ register THING *mp;
 			purse -= GOLDCALC + GOLDCALC + GOLDCALC + GOLDCALC;
 		    if (purse < 0)
 			purse = 0;
-		    remove(&mp->t_pos, mp, FALSE);
+		    remove_mon(&mp->t_pos, mp, FALSE);
+                    mp=NULL;
 		    if (purse != lastpurse)
 			msg("your purse feels lighter");
 		}
@@ -266,43 +302,70 @@ register THING *mp;
 				steal = obj;
 		    if (steal != NULL)
 		    {
-			remove(&mp->t_pos, moat(mp->t_pos.y, mp->t_pos.x), FALSE);
-			inpack--;
-			if (steal->o_count > 1 && steal->o_group == 0)
-			{
-			    register int oc;
-
-			    oc = steal->o_count--;
-			    steal->o_count = 1;
-			    msg("she stole %s!", inv_name(steal, TRUE));
-			    steal->o_count = oc;
-			}
-			else
-			{
-			    detach(pack, steal);
-			    discard(steal);
-			    msg("she stole %s!", inv_name(steal, TRUE));
-			}
+			remove_mon(&mp->t_pos, moat(mp->t_pos.y, mp->t_pos.x), FALSE);
+                        mp=NULL;
+			leave_pack(steal, FALSE, FALSE);
+			msg("she stole %s!", inv_name(steal, TRUE));
+			discard(steal);
 		    }
 		}
 		otherwise:
 		    break;
 	    }
     }
-    else if (mp->t_type != 'E')
+    else if (mp->t_type != 'I')
     {
+	if (has_hit)
+	{
+	    addmsg(".  ");
+	    has_hit = FALSE;
+	}
 	if (mp->t_type == 'F')
 	{
-	    pstats.s_hpt -= fung_hit;
+	    pstats.s_hpt -= vf_hit;
 	    if (pstats.s_hpt <= 0)
 		death(mp->t_type);	/* Bye bye life ... */
 	}
-	miss(mname, NULL);
+	miss(mname, (char *) NULL, FALSE);
     }
-    if (fight_flush)
+    if (fight_flush && !to_death)
 	flush_type();
     count = 0;
     status();
+    if (mp == NULL)
+        return(-1);
+    else
+        return(0);
+}
+
+/*
+ * set_mname:
+ *	return the monster name for the given monster
+ */
+char *
+set_mname(tp)
+register THING *tp;
+{
+    int ch;
+    char *mname;
+    static char tbuf[MAXSTR] = { 't', 'h', 'e', ' ' };
+
+    if (!see_monst(tp) && !on(player, SEEMONST))
+	return (terse ? "it" : "something");
+    else if (on(player, ISHALU))
+    {
+	move(tp->t_pos.y, tp->t_pos.x);
+	ch = toascii(inch());
+	if (!isupper(ch))
+	    ch = rnd(26);
+	else
+	    ch -= 'A';
+	mname = monsters[ch].m_name;
+    }
+    else
+	mname = monsters[tp->t_type - 'A'].m_name;
+    strcpy(&tbuf[4], mname);
+    return tbuf;
 }
 
 /*
@@ -312,40 +375,17 @@ register THING *mp;
 swing(at_lvl, op_arm, wplus)
 int at_lvl, op_arm, wplus;
 {
-    register int res = rnd(20);
-    register int need = (20 - at_lvl) - op_arm;
+    int res = rnd(20);
+    int need = (20 - at_lvl) - op_arm;
 
     return (res + wplus >= need);
-}
-
-/*
- * check_level:
- *	Check to see if the guy has gone up a level.
- */
-check_level()
-{
-    register int i, add, olevel;
-
-    for (i = 0; e_levels[i] != 0; i++)
-	if (e_levels[i] > pstats.s_exp)
-	    break;
-    i++;
-    olevel = pstats.s_lvl;
-    pstats.s_lvl = i;
-    if (i > olevel)
-    {
-	add = roll(i - olevel, 10);
-	max_hp += add;
-	if ((pstats.s_hpt += add) > max_hp)
-	    pstats.s_hpt = max_hp;
-	msg("welcome to level %d", i);
-    }
 }
 
 /*
  * roll_em:
  *	Roll several attacks
  */
+bool
 roll_em(thatt, thdef, weap, hurl)
 THING *thatt, *thdef, *weap;
 bool hurl;
@@ -357,7 +397,6 @@ bool hurl;
     register int hplus;
     register int dplus;
     register int damage;
-    char *strchr();
 
     att = &thatt->t_stats;
     def = &thdef->t_stats;
@@ -374,14 +413,15 @@ bool hurl;
 	if (weap == cur_weapon)
 	{
 	    if (ISRING(LEFT, R_ADDDAM))
-		dplus += cur_ring[LEFT]->o_ac;
+		dplus += cur_ring[LEFT]->o_arm;
 	    else if (ISRING(LEFT, R_ADDHIT))
-		hplus += cur_ring[LEFT]->o_ac;
+		hplus += cur_ring[LEFT]->o_arm;
 	    if (ISRING(RIGHT, R_ADDDAM))
-		dplus += cur_ring[RIGHT]->o_ac;
+		dplus += cur_ring[RIGHT]->o_arm;
 	    else if (ISRING(RIGHT, R_ADDHIT))
-		hplus += cur_ring[RIGHT]->o_ac;
+		hplus += cur_ring[RIGHT]->o_arm;
 	}
+	cp = weap->o_damage;
 	if (hurl)
 	    if ((weap->o_flags&ISMISL) && cur_weapon != NULL &&
 	      cur_weapon->o_which == weap->o_launch)
@@ -390,10 +430,8 @@ bool hurl;
 		hplus += cur_weapon->o_hplus;
 		dplus += cur_weapon->o_dplus;
 	    }
-	    else
+	    else if (weap->o_launch < 0)
 		cp = weap->o_hurldmg;
-	else
-	    cp = weap->o_damage;
     }
     /*
      * If the creature being attacked is not running (alseep or held)
@@ -405,28 +443,28 @@ bool hurl;
     if (def == &pstats)
     {
 	if (cur_armor != NULL)
-	    def_arm = cur_armor->o_ac;
+	    def_arm = cur_armor->o_arm;
 	if (ISRING(LEFT, R_PROTECT))
-	    def_arm -= cur_ring[LEFT]->o_ac;
+	    def_arm -= cur_ring[LEFT]->o_arm;
 	if (ISRING(RIGHT, R_PROTECT))
-	    def_arm -= cur_ring[RIGHT]->o_ac;
+	    def_arm -= cur_ring[RIGHT]->o_arm;
     }
-    for (;;)
+    while(cp != NULL && *cp != '\0')
     {
 	ndice = atoi(cp);
-	if ((cp = strchr(cp, 'd')) == NULL)
+	if ((cp = strchr(cp, 'x')) == NULL)
 	    break;
 	nsides = atoi(++cp);
-	if (swing(att->s_lvl, def_arm, hplus + str_plus(att->s_str)))
+	if (swing(att->s_lvl, def_arm, hplus + str_plus[att->s_str]))
 	{
-	    register int proll;
+	    int proll;
 
 	    proll = roll(ndice, nsides);
-#ifdef WIZARD
-	    if (ndice + nsides > 0 && proll < 1)
-		debug("Damage for %dd%d came out %d, dplus = %d, add_dam = %d, def_arm = %d", ndice, nsides, proll, dplus, add_dam(att->s_str), def_arm);
+#ifdef MASTER
+	    if (ndice + nsides > 0 && proll <= 0)
+		debug("Damage for %dx%d came out %d, dplus = %d, add_dam = %d, def_arm = %d", ndice, nsides, proll, dplus, add_dam[att->s_str], def_arm);
 #endif
-	    damage = dplus + proll + add_dam(att->s_str);
+	    damage = dplus + proll + add_dam[att->s_str];
 	    def->s_hpt -= max(0, damage);
 	    did_hit = TRUE;
 	}
@@ -451,190 +489,117 @@ bool upper;
     *tbuf = '\0';
     if (mname == 0)
 	strcpy(tbuf, "you"); 
-    else if (strcmp(mname, "it") == 0 || strcmp(mname, "something") == 0)
-	strcpy(tbuf, (terse ? "it" : "something"));
     else
-    {
-	strcpy(tbuf, "the ");
-	strcat(tbuf, mname);
-    }
+	strcpy(tbuf, mname);
     if (upper)
 	*tbuf = toupper(*tbuf);
     return tbuf;
 }
 
 /*
+ * thunk:
+ *	A missile hits a monster
+ */
+thunk(weap, mname, noend)
+register THING *weap;
+register char *mname;
+register bool noend;
+{
+    if (to_death)
+	return;
+    if (weap->o_type == WEAPON)
+	addmsg("the %s hits ", weap_info[weap->o_which].oi_name);
+    else
+	addmsg("you hit ");
+    addmsg("%s", mname);
+    if (!noend)
+	endmsg();
+}
+
+/*
  * hit:
  *	Print a message to indicate a succesful hit
  */
-hit(er, ee)
-register char *er, *ee;
-{
-    register char *s;
 
+hit(er, ee, noend)
+register char *er, *ee;
+bool noend;
+{
+    int i;
+    char *s;
+    extern char *h_names[];
+
+    if (to_death)
+	return;
     addmsg(prname(er, TRUE));
     if (terse)
 	s = " hit";
     else
-	switch (rnd(4))
-	{
-	    when 0: s = " scored an excellent hit on ";
-	    when 1: s = " hit ";
-	    when 2: s = (er == 0 ? " have injured " : " has injured ");
-	    when 3: s = (er == 0 ? " swing and hit " : " swings and hits ");
-	}
+    {
+	i = rnd(4);
+	if (er != NULL)
+	    i += 4;
+	s = h_names[i];
+    }
     addmsg(s);
     if (!terse)
 	addmsg(prname(ee, FALSE));
-    endmsg();
+    if (!noend)
+	endmsg();
 }
 
 /*
  * miss:
  *	Print a message to indicate a poor swing
  */
-miss(er, ee)
+miss(er, ee, noend)
 register char *er, *ee;
+bool noend;
 {
-    register char *s;
+    int i;
+    extern char *m_names[];
 
+    if (to_death)
+	return;
     addmsg(prname(er, TRUE));
-    switch (terse ? 0 : rnd(4))
-    {
-	when 0: s = (er == 0 ? " miss" : " misses");
-	when 1: s = (er == 0 ? " swing and miss" : " swings and misses");
-	when 2: s = (er == 0 ? " barely miss" : " barely misses");
-	when 3: s = (er == 0 ? " don't hit" : " doesn't hit");
-    }
-    addmsg(s);
+    if (terse)
+	i = 0;
+    else
+	i = rnd(4);
+    if (er != NULL)
+	i += 4;
+    addmsg(m_names[i]);
     if (!terse)
 	addmsg(" %s", prname(ee, FALSE));
-    endmsg();
-}
-
-/*
- * save_throw:
- *	See if a creature save against something
- */
-save_throw(which, tp)
-int which;
-THING *tp;
-{
-    register int need;
-
-    need = 14 + which - tp->t_stats.s_lvl / 2;
-    return (roll(1, 20) >= need);
-}
-
-/*
- * save:
- *	See if he saves against various nasty things
- */
-save(which)
-register int which;
-{
-    if (which == VS_MAGIC)
-    {
-	if (ISRING(LEFT, R_PROTECT))
-	    which -= cur_ring[LEFT]->o_ac;
-	if (ISRING(RIGHT, R_PROTECT))
-	    which -= cur_ring[RIGHT]->o_ac;
-    }
-    return save_throw(which, &player);
-}
-
-/*
- * str_plus:
- *	Compute bonus/penalties for strength on the "to hit" roll
- */
-str_plus(str)
-register str_t str;
-{
-    if (str == 31)
-	return 3;
-    if (str > 20)
-	return 2;
-    if (str > 16)
-	return 1;
-    if (str > 6)
-	return 0;
-    return str - 7;
-}
-
-/*
- * add_dam:
- *	Compute additional damage done for exceptionally high or low strength
- */
- add_dam(str)
- register str_t str;
- {
-    if (str == 31)
-	return 6;
-    if (str > 21)
-	return 5;
-    if (str == 21)
-	return 4;
-    if (str > 18)
-	return 3;
-    if (str == 18)
-	return 2;
-    if (str > 15)
-	return 1;
-    if (str > 6)
-	return 0;
-    return str - 7;
-}
-
-/*
- * raise_level:
- *	The guy just magically went up a level.
- */
-raise_level()
-{
-    pstats.s_exp = e_levels[pstats.s_lvl-1] + 1L;
-    check_level();
-}
-
-/*
- * thunk:
- *	A missile hits a monster
- */
-thunk(weap, mname)
-register THING *weap;
-register char *mname;
-{
-    if (weap->o_type == WEAPON)
-	addmsg("the %s hits ", w_names[weap->o_which]);
-    else
-	addmsg("you hit ");
-    if (strcmp(mname, "it") == 0 || strcmp(mname, "something") == 0)
-	msg(terse ? "it" : "something");
-    else
-	msg("the %s", mname);
+    if (!noend)
+	endmsg();
 }
 
 /*
  * bounce:
  *	A missile misses a monster
  */
-bounce(weap, mname)
+bounce(weap, mname, noend)
 register THING *weap;
 register char *mname;
+bool noend;
 {
+    if (to_death)
+	return;
     if (weap->o_type == WEAPON)
-	addmsg("the %s misses ", w_names[weap->o_which]);
+	addmsg("the %s misses ", weap_info[weap->o_which].oi_name);
     else
 	addmsg("you missed ");
-    if (strcmp(mname, "it") != 0 && strcmp(mname, "something") != 0)
-	addmsg("the ");
-    msg(mname);
+    addmsg(mname);
+    if (!noend)
+	endmsg();
 }
 
 /*
- * remove:
+ * remove_mon:
  *	Remove a monster from the screen
  */
-remove(mp, tp, waskill)
+remove_mon(mp, tp, waskill)
 register coord *mp;
 register THING *tp;
 bool waskill;
@@ -654,30 +619,14 @@ bool waskill;
     moat(mp->y, mp->x) = NULL;
     mvaddch(mp->y, mp->x, tp->t_oldch);
     detach(mlist, tp);
-    discard(tp);
-}
-
-/*
- * is_magic:
- *	Returns true if an object radiates magic
- */
-is_magic(obj)
-register THING *obj;
-{
-    switch (obj->o_type)
+    if (on(*tp, ISTARGET))
     {
-	case ARMOR:
-	    return obj->o_ac != a_class[obj->o_which];
-	case WEAPON:
-	    return obj->o_hplus != 0 || obj->o_dplus != 0;
-	case POTION:
-	case SCROLL:
-	case STICK:
-	case RING:
-	case AMULET:
-	    return TRUE;
+	kamikaze = FALSE;
+	to_death = FALSE;
+	if (fight_flush)
+	    flush_type();
     }
-    return FALSE;
+    discard(tp);
 }
 
 /*
@@ -688,29 +637,24 @@ killed(tp, pr)
 register THING *tp;
 bool pr;
 {
-    register char *mname;
-
-    if (pr)
-	if (!on(player, ISTrip))
-	    mname = monsters[tp->t_type-'A'].m_name;
-	else
-	    mname = monsters[toascii(mvinch(tp->t_pos.y,tp->t_pos.x))-'A'].m_name;
+    char *mname;
 
     pstats.s_exp += tp->t_stats.s_exp;
+
     /*
-     * If the monster was a violet fungi, un-hold him
+     * If the monster was a venus flytrap, un-hold him
      */
     switch (tp->t_type)
     {
-	when 'F':
+	case 'F':
 	    player.t_flags &= ~ISHELD;
-	    fung_hit = 0;
-	    strcpy(monsters['F'-'A'].m_stats.s_dmg, "000d0");
+	    vf_hit = 0;
+	    strcpy(monsters['F'-'A'].m_stats.s_dmg, "000x0");
 	when 'L':
 	{
-	    register THING *gold;
+	    THING *gold;
 
-	    if (fallpos(&tp->t_pos, &tp->t_room->r_gold, TRUE))
+	    if (fallpos(&tp->t_pos, &tp->t_room->r_gold) && level >= max_level)
 	    {
 		gold = new_item();
 		gold->o_type = GOLD;
@@ -725,24 +669,27 @@ bool pr;
     /*
      * Get rid of the monster.
      */
-    remove(&tp->t_pos, tp, TRUE);
+    mname = set_mname(tp);
+    remove_mon(&tp->t_pos, tp, TRUE);
     if (pr)
     {
-	if (!terse)
-	    addmsg("you have ");
-	addmsg("defeated ");
-	if (on(player, ISBLIND) ||
-	   (on(*tp, ISINVIS) && !on(player, CANSEE|SEEMONST)))
-		msg(terse ? "it" : "something");
+	if (has_hit)
+	{
+	    addmsg(".  Defeated ");
+	    has_hit = FALSE;
+	}
 	else
 	{
 	    if (!terse)
-		addmsg("the ");
-	    msg(mname);
+		addmsg("you have ");
+	    addmsg("defeated ");
 	}
+	msg(mname);
     }
     /*
      * Do adjustments if he went up a level
      */
     check_level();
+    if (fight_flush)
+	flush_type();
 }

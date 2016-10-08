@@ -1,24 +1,40 @@
 /*
  * Various installation dependent routines
  *
- * @(#)mach_dep.c	4.27 (NMT from Berkeley 5.2) 8/25/83
+ * @(#)mach_dep.c	4.37 (Berkeley) 05/23/83
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980-1983, 1985, 1999 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 /*
  * The various tuneable defines are:
  *
  *	SCOREFILE	Where/if the score file should live.
+ *	ALLSCORES	Score file is top ten scores, not top ten
+ *			players.  This is only useful when only a few
+ *			people will be playing; otherwise the score file
+ *			gets hogged by just a few people.
+ *	NUMSCORES	Number of scores in the score file (default 10).
+ *	NUMNAME		String version of NUMSCORES (first character
+ *			should be capitalized) (default "Ten").
  *	MAXLOAD		What (if any) the maximum load average should be
- *			when people are playing.  If defined, then
- *		LOADAV		Should rogue define it's own routine to
- *				get the load average?
- *		NAMELIST	If so, where does the system namelist hide?
+ *			when people are playing.  Since it is divided
+ *			by 10, to specify a load limit of 4.0, MAXLOAD
+ *			should be "40".	 If defined, then
+ *	LOADAV		Should it use it's own routine to get
+ *			the load average?
+ *	NAMELIST	If so, where does the system namelist
+ *			hide?
  *	MAXUSERS	What (if any) the maximum user count should be
- *			when people are playing.  If defined, then
- *		UCOUNT		Should rogue define it's own routine to
- *				count users?
- *		UTMP		If so, where does the user list hide?
- *	CHECKTIME	How often/if rogue should check during the game
+ *	        	when people are playing.  If defined, then
+ *	UCOUNT		Should it use it's own routine to count
+ *			users?
+ *	UTMP		If so, where does the user list hide?
+ *	CHECKTIME	How often/if it should check during the game
  *			for high load average.
  */
 
@@ -27,19 +43,36 @@
 #include <signal.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <limits.h>
 
-#ifdef SCOREFILE
-static char *lockfile = "/tmp/.roguelock";
-#endif
+#include <fcntl.h>
+
+static char scorefile[PATH_MAX] = "rogue54.scr";
+static char lockfile[PATH_MAX] = "rogue54.lck";
+
+# ifndef NUMSCORES
+#	define	NUMSCORES	10
+#	define	NUMNAME		"Ten"
+# endif
+
+unsigned int numscores = NUMSCORES;
+char *Numname = NUMNAME;
+
+# ifdef ALLSCORES
+bool allscore = TRUE;
+# else  /* ALLSCORES */
+bool allscore = FALSE;
+# endif /* ALLSCORES */
 
 #ifdef CHECKTIME
 static int num_checks;		/* times we've gone over in checkout() */
-#endif
+#endif /* CHECKTIME */
 
 /*
  * init_check:
  *	Check out too see if it is proper to play the game now
  */
+
 init_check()
 {
 #if defined(MAXLOAD) || defined(MAXUSERS)
@@ -61,67 +94,136 @@ init_check()
  *	Open up the score file for future use, and then
  *	setuid(getuid()) in case we are running setuid.
  */
+
 open_score()
 {
+    char *homedir = md_getroguedir();
+
+    if (homedir == NULL)
+        homedir = "";
+
 #ifdef SCOREFILE
-    fd = open(SCOREFILE, 2);
+    strcpy(scorefile, homedir);
+    if (*scorefile)
+        strcat(scorefile,"/");
+    strcat(scorefile, "rogue54.scr");
+    strcpy(lockfile, homedir);
+    if (*lockfile)
+        strcat(lockfile, "/");
+    strcat(lockfile, "rogue54.lck");
+    fd = open(scorefile, O_RDWR | O_CREAT, 0666);
 #else
     fd = -1;
 #endif
-    setuid(getuid());
-    setgid(getgid());
+    md_normaluser();
 }
 
 /*
  * setup:
  *	Get starting setup for all games
  */
+
 setup()
 {
-    int  auto_save(), quit(), endit(), tstp();
 #ifdef CHECKTIME
     int  checkout();
 #endif
 
-    /*
-     * make sure that large terminals don't overflow the bounds
-     * of the program
-     */
-    if (LINES > MAXLINES)
-	LINES = MAXLINES;
-    if (COLS > MAXCOLS)
-	COLS = MAXCOLS;
-
+#ifdef SIGHUP
     signal(SIGHUP, auto_save);
+#endif
 #ifndef DUMP
     signal(SIGILL, auto_save);
+#ifdef SIGTRAP
     signal(SIGTRAP, auto_save);
+#endif
+#ifdef SIGIOT
     signal(SIGIOT, auto_save);
+#endif
+#ifdef SIGEMT
     signal(SIGEMT, auto_save);
+#endif
     signal(SIGFPE, auto_save);
+#ifdef SIGBUS
     signal(SIGBUS, auto_save);
+#endif
     signal(SIGSEGV, auto_save);
+#ifdef SIGSYS
     signal(SIGSYS, auto_save);
+#endif
     signal(SIGTERM, auto_save);
 #endif
 
     signal(SIGINT, quit);
 #ifndef DUMP
+#ifdef SIGQUIT
     signal(SIGQUIT, endit);
+#endif
 #endif
 #ifdef CHECKTIME
     signal(SIGALRM, checkout);
     alarm(CHECKTIME * 60);
     num_checks = 0;
 #endif
-    crmode();				/* Cbreak mode */
+    raw();				/* Raw mode */
     noecho();				/* Echo off */
+    keypad(stdscr,1);
+#ifdef TIOCGLTC
+    getltchars();			/* get the local tty chars */
+#endif
 }
+
+/*
+ * getltchars:
+ *	Get the local tty chars for later use
+ */
+
+getltchars()
+{
+#ifdef TIOCGLTC
+    ioctl(1, TIOCGLTC, &ltc);
+    got_ltc = TRUE;
+    orig_dsusp = ltc.t_dsuspc;
+    ltc.t_dsuspc = ltc.t_suspc;
+    ioctl(1, TIOCSLTC, &ltc);
+#endif
+}
+
+/* 
+ * resetltchars: 
+ *      Reset the local tty chars to original values. 
+ */ 
+void 
+resetltchars(void) 
+{ 
+#ifdef TIOCGLTC 
+    if (got_ltc) { 
+        ltc.t_dsuspc = orig_dsusp; 
+        ioctl(1, TIOCSLTC, &ltc); 
+    } 
+#endif 
+} 
+  
+/* 
+ * playltchars: 
+ *      Set local tty chars to the values we use when playing. 
+ */ 
+void 
+playltchars(void) 
+{ 
+#ifdef TIOCGLTC 
+    if (got_ltc) { 
+        ltc.t_dsuspc = ltc.t_suspc; 
+        ioctl(1, TIOCSLTC, &ltc); 
+    } 
+#endif 
+} 
 
 /*
  * start_score:
  *	Start the scoring sequence
  */
+
 start_score()
 {
 #ifdef CHECKTIME
@@ -130,11 +232,11 @@ start_score()
 }
 
 /*
- * symlink:
+ * is_symlink:
  *	See if the file has a symbolic link
  */
-symlink(sp)
-char *sp;
+bool
+is_symlink(char *sp)
 {
 #ifdef S_IFLNK
     struct stat sbuf2;
@@ -153,35 +255,41 @@ char *sp;
  * too_much:
  *	See if the system is being used too much for this game
  */
+bool
 too_much()
 {
 #ifdef MAXLOAD
     double avec[3];
 #else
-    register int cnt;
+    int cnt;
 #endif
 
 #ifdef MAXLOAD
     loadav(avec);
-    return (avec[1] > (MAXLOAD / 10.0));
-#else
-    return (ucount() > MAXUSERS);
+    if (avec[1] > (MAXLOAD / 10.0))
+	return TRUE;
 #endif
+#ifdef MAXUSERS
+    if (ucount() > MAXUSERS)
+	return TRUE;
+#endif
+    return FALSE;
 }
 
 /*
  * author:
  *	See if a user is an author of the program
  */
+bool
 author()
 {
-#ifdef WIZARD
+#ifdef MASTER
     if (wizard)
 	return TRUE;
 #endif
-    switch (getuid())
+    switch (md_getuid())
     {
-	case 162:
+	case -1:
 	    return TRUE;
 	default:
 	    return FALSE;
@@ -194,7 +302,8 @@ author()
  * checkout:
  *	Check each CHECKTIME seconds to see if the load is too high
  */
-checkout()
+
+checkout(int sig)
 {
     static char *msgs[] = {
 	"The load is too high to be playing.  Please leave in %0.1f minutes",
@@ -231,24 +340,29 @@ checkout()
 /*
  * chmsg:
  *	checkout()'s version of msg.  If we are in the middle of a
- *	shell, do a printf instead of a msg to avoid the refresh.
+ *	shell, do a printf instead of a msg to a the refresh.
  */
-chmsg(fmt, arg)
-char *fmt;
-int arg;
+/* VARARGS1 */
+
+chmsg(char *fmt, int arg)
 {
-    if (in_shell)
+    if (!in_shell)
+	msg(fmt, arg);
+    else
     {
 	printf(fmt, arg);
 	putchar('\n');
 	fflush(stdout);
     }
-    else
-	msg(fmt, arg);
 }
 #endif
 
 #ifdef LOADAV
+/*
+ * loadav:
+ *	Looking up load average in core (for system where the loadav()
+ *	system call isn't defined
+ */
 
 #include <nlist.h>
 
@@ -256,47 +370,45 @@ struct nlist avenrun = {
     "_avenrun"
 };
 
-/*
- * loadav:
- *	Looking up load average in core (for system where the loadav()
- *	system call isn't defined
- */
-loadav(avg)
-register double *avg;
+
+loadav(double *avg)
 {
-    register int kmem;
+    int kmem;
 
     if ((kmem = open("/dev/kmem", 0)) < 0)
 	goto bad;
     nlist(NAMELIST, &avenrun);
     if (avenrun.n_type == 0)
     {
-bad:
-	avg[0] = avg[1] = avg[2] = 0.0;
 	close(kmem);
+bad:
+	avg[0] = 0.0;
+	avg[1] = 0.0;
+	avg[2] = 0.0;
 	return;
     }
 
     lseek(kmem, (long) avenrun.n_value, 0);
     read(kmem, (char *) avg, 3 * sizeof (double));
-	close(kmem);
+    close(kmem);
 }
 #endif
 
 #ifdef UCOUNT
 /*
  * ucount:
- *	Count number of users on the system
+ *	count number of users on the system
  */
 #include <utmp.h>
 
 struct utmp buf;
 
+int
 ucount()
 {
-    register struct utmp *up;
-    register FILE *utmp;
-    register int count;
+    struct utmp *up;
+    FILE *utmp;
+    int count;
 
     if ((utmp = fopen(UTMP, "r")) == NULL)
 	return 0;
@@ -317,31 +429,31 @@ ucount()
  *	lock the score file.  If it takes too long, ask the user if
  *	they care to wait.  Return TRUE if the lock is successful.
  */
+static int lfd = -1;
+bool
 lock_sc()
 {
 #ifdef SCOREFILE
-    register int cnt;
+    int cnt;
     static struct stat sbuf;
-    time_t time();
 
 over:
-    close(8);	/* just in case there are no files left */
-    if (creat(lockfile, 0000) >= 0)
+    if ((lfd=md_creat(lockfile, 0000)) >= 0)
 	return TRUE;
     for (cnt = 0; cnt < 5; cnt++)
     {
-	sleep(1);
-	if (creat(lockfile, 0000) >= 0)
+	md_sleep(1);
+	if ((lfd=md_creat(lockfile, 0000)) >= 0)
 	    return TRUE;
     }
     if (stat(lockfile, &sbuf) < 0)
     {
-	creat(lockfile, 0000);
+	lfd=md_creat(lockfile, 0000);
 	return TRUE;
     }
     if (time(NULL) - sbuf.st_mtime > 10)
     {
-	if (unlink(lockfile) < 0)
+	if (md_unlink(lockfile) < 0)
 	    return FALSE;
 	goto over;
     }
@@ -354,19 +466,19 @@ over:
 	if (prbuf[0] == 'y')
 	    for (;;)
 	    {
-		if (creat(lockfile, 0000) >= 0)
+		if ((lfd=md_creat(lockfile, 0000)) >= 0)
 		    return TRUE;
 		if (stat(lockfile, &sbuf) < 0)
 		{
-		    creat(lockfile, 0000);
+		    lfd=md_creat(lockfile, 0000);
 		    return TRUE;
 		}
 		if (time(NULL) - sbuf.st_mtime > 10)
 		{
-		    if (unlink(lockfile) < 0)
+		    if (md_unlink(lockfile) < 0)
 			return FALSE;
 		}
-		sleep(1);
+		md_sleep(1);
 	    }
 	else
 	    return FALSE;
@@ -378,10 +490,14 @@ over:
  * unlock_sc:
  *	Unlock the score file
  */
+
 unlock_sc()
 {
 #ifdef SCOREFILE
-    unlink(lockfile);
+    if (lfd != -1)
+        close(lfd);
+    lfd = -1;
+    md_unlink(lockfile);
 #endif
 }
 
@@ -389,18 +505,8 @@ unlock_sc()
  * flush_type:
  *	Flush typeahead for traps, etc.
  */
+
 flush_type()
 {
-    register int flag;
-
-#ifndef	attron
-    flag = _tty.sg_flags;
-    _tty.sg_flags |= RAW;
-    stty(_tty_ch, &_tty);
-    _tty.sg_flags = flag;
-    stty(_tty_ch, &_tty);
-#else	attron
-    noraw();
-    raw();
-#endif	attron
+    flushinp();
 }

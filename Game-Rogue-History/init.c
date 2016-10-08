@@ -1,7 +1,13 @@
 /*
  * global variable initializaton
  *
- * @(#)init.c	4.19 (NMT from Berkeley 5.2) 8/25/83
+ * @(#)init.c	4.31 (Berkeley) 02/05/99
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980-1983, 1985, 1999 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 #include <curses.h>
@@ -10,7 +16,7 @@
 
 /*
  * init_player:
- *	Roll up the rogue
+ *	Roll her up
  */
 init_player()
 {
@@ -19,42 +25,11 @@ init_player()
     pstats = max_stats;
     food_left = HUNGERTIME;
     /*
-     * Give the rogue his weaponry.  First a mace.
+     * Give him some food
      */
     obj = new_item();
-    obj->o_type = WEAPON;
-    obj->o_which = MACE;
-    init_weapon(obj, MACE);
-    obj->o_hplus = 1;
-    obj->o_dplus = 1;
-    obj->o_flags |= ISKNOW;
+    obj->o_type = FOOD;
     obj->o_count = 1;
-    obj->o_group = 0;
-    add_pack(obj, TRUE);
-    cur_weapon = obj;
-    /*
-     * Now a +1 bow
-     */
-    obj = new_item();
-    obj->o_type = WEAPON;
-    obj->o_which = BOW;
-    init_weapon(obj, BOW);
-    obj->o_hplus = 1;
-    obj->o_dplus = 0;
-    obj->o_count = 1;
-    obj->o_group = 0;
-    obj->o_flags |= ISKNOW;
-    add_pack(obj, TRUE);
-    /*
-     * Now some arrows
-     */
-    obj = new_item();
-    obj->o_type = WEAPON;
-    obj->o_which = ARROW;
-    init_weapon(obj, ARROW);
-    obj->o_count = rnd(15) + 25;
-    obj->o_hplus = obj->o_dplus = 0;
-    obj->o_flags |= ISKNOW;
     add_pack(obj, TRUE);
     /*
      * And his suit of armor
@@ -62,20 +37,36 @@ init_player()
     obj = new_item();
     obj->o_type = ARMOR;
     obj->o_which = RING_MAIL;
-    obj->o_ac = a_class[RING_MAIL] - 1;
+    obj->o_arm = a_class[RING_MAIL] - 1;
     obj->o_flags |= ISKNOW;
     obj->o_count = 1;
-    obj->o_group = 0;
     cur_armor = obj;
     add_pack(obj, TRUE);
     /*
-     * Give him some food too
+     * Give him his weaponry.  First a mace.
      */
     obj = new_item();
-    obj->o_type = FOOD;
-    obj->o_count = 1;
-    obj->o_which = 0;
-    obj->o_group = 0;
+    init_weapon(obj, MACE);
+    obj->o_hplus = 1;
+    obj->o_dplus = 1;
+    obj->o_flags |= ISKNOW;
+    add_pack(obj, TRUE);
+    cur_weapon = obj;
+    /*
+     * Now a +1 bow
+     */
+    obj = new_item();
+    init_weapon(obj, BOW);
+    obj->o_hplus = 1;
+    obj->o_flags |= ISKNOW;
+    add_pack(obj, TRUE);
+    /*
+     * Now some arrows
+     */
+    obj = new_item();
+    init_weapon(obj, ARROW);
+    obj->o_count = rnd(15) + 25;
+    obj->o_flags |= ISKNOW;
     add_pack(obj, TRUE);
 }
 
@@ -84,7 +75,7 @@ init_player()
  * potions and scrolls
  */
 
-static char *rainbow[] = {
+char *rainbow[] = {
     "amber",
     "aquamarine",
     "black",
@@ -115,33 +106,28 @@ static char *rainbow[] = {
 };
 
 #define NCOLORS (sizeof rainbow / sizeof (char *))
+int cNCOLORS = NCOLORS;
 
 static char *sylls[] = {
-    "a", "ab", "ag", "aks", "ala", "an", "ankh", "app", "arg", "arze",
-    "ash", "ban", "bar", "bat", "bek", "bie", "bin", "bit", "bjor",
-    "blu", "bot", "bu", "byt", "comp", "con", "cos", "cre", "dalf",
-    "dan", "den", "do", "e", "eep", "el", "eng", "er", "ere", "erk",
-    "esh", "evs", "fa", "fid", "for", "fri", "fu", "gan", "gar",
-    "glen", "gop", "gre", "ha", "he", "hyd", "i", "ing", "ion", "ip",
+    "a", "ab", "ag", "aks", "ala", "an", "app", "arg", "arze", "ash",
+    "bek", "bie", "bit", "bjor", "blu", "bot", "bu", "byt", "comp",
+    "con", "cos", "cre", "dalf", "dan", "den", "do", "e", "eep", "el",
+    "eng", "er", "ere", "erk", "esh", "evs", "fa", "fid", "fri", "fu",
+    "gan", "gar", "glen", "gop", "gre", "ha", "hyd", "i", "ing", "ip",
     "ish", "it", "ite", "iv", "jo", "kho", "kli", "klis", "la", "lech",
-    "man", "mar", "me", "mi", "mic", "mik", "mon", "mung", "mur",
-    "nej", "nelg", "nep", "ner", "nes", "nes", "nih", "nin", "o", "od",
-    "ood", "org", "orn", "ox", "oxy", "pay", "pet", "ple", "plu", "po",
-    "pot", "prok", "re", "rea", "rhov", "ri", "ro", "rog", "rok", "rol",
-    "sa", "san", "sat", "see", "sef", "seh", "shu", "ski", "sna",
-    "sne", "snik", "sno", "so", "sol", "sri", "sta", "sun", "ta",
-    "tab", "tem", "ther", "ti", "tox", "trol", "tue", "turs", "u",
-    "ulk", "um", "un", "uni", "ur", "val", "viv", "vly", "vom", "wah",
-    "wed", "werg", "wex", "whon", "wun", "xo", "y", "yot", "yu",
-    "zant", "zap", "zeb", "zim", "zok", "zon", "zum",
+    "mar", "me", "mi", "mic", "mik", "mon", "mung", "mur", "nej",
+    "nelg", "nep", "ner", "nes", "nes", "nih", "nin", "o", "od", "ood",
+    "org", "orn", "ox", "oxy", "pay", "ple", "plu", "po", "pot",
+    "prok", "re", "rea", "rhov", "ri", "ro", "rog", "rok", "rol", "sa",
+    "san", "sat", "sef", "seh", "shu", "ski", "sna", "sne", "snik",
+    "sno", "so", "sol", "sri", "sta", "sun", "ta", "tab", "tem",
+    "ther", "ti", "tox", "trol", "tue", "turs", "u", "ulk", "um", "un",
+    "uni", "ur", "val", "viv", "vly", "vom", "wah", "wed", "werg",
+    "wex", "whon", "wun", "xo", "y", "yot", "yu", "zant", "zeb", "zim",
+    "zok", "zon", "zum",
 };
 
-typedef struct {
-    char	*st_name;
-    int		st_value;
-} STONE;
-
-static STONE stones[] = {
+STONE stones[] = {
     { "agate",		 25},
     { "alexandrite",	 40},
     { "amethyst",	 50},
@@ -171,8 +157,9 @@ static STONE stones[] = {
 };
 
 #define NSTONES (sizeof stones / sizeof (STONE))
+int cNSTONES = NSTONES;
 
-static char *wood[] = {
+char *wood[] = {
     "avocado wood",
     "balsa",
     "bamboo",
@@ -209,8 +196,9 @@ static char *wood[] = {
 };
 
 #define NWOOD (sizeof wood / sizeof (char *))
+int cNWOOD = NWOOD;
 
-static char *metal[] = {
+char *metal[] = {
     "aluminum",
     "beryllium",
     "bone",
@@ -236,21 +224,10 @@ static char *metal[] = {
 };
 
 #define NMETAL (sizeof metal / sizeof (char *))
+int cNMETAL = NMETAL;
+#define MAX3(a,b,c)	(a > b ? (a > c ? a : c) : (b > c ? b : c))
 
-/*
- * init_things
- *	Initialize the probabilities for types of things
- */
-init_things()
-{
-    register struct magic_item *mp;
-
-    for (mp = &things[1]; mp < &things[NUMTHINGS]; mp++)
-	mp->mi_prob += (mp-1)->mi_prob;
-#ifdef WIZARD
-    badcheck("things", things, NUMTHINGS);
-#endif
-}
+static bool used[MAX3(NCOLORS, NSTONES, NWOOD)];
 
 /*
  * init_colors:
@@ -259,7 +236,6 @@ init_things()
 init_colors()
 {
     register int i, j;
-    bool used[NCOLORS];
 
     for (i = 0; i < NCOLORS; i++)
 	used[i] = FALSE;
@@ -270,14 +246,7 @@ init_colors()
 	until (!used[j]);
 	used[j] = TRUE;
 	p_colors[i] = rainbow[j];
-	p_know[i] = FALSE;
-	p_guess[i] = NULL;
-	if (i > 0)
-	    p_magic[i].mi_prob += p_magic[i-1].mi_prob;
     }
-#ifdef WIZARD
-    badcheck("potions", p_magic, MAXPOTIONS);
-#endif
 }
 
 /*
@@ -295,7 +264,7 @@ init_names()
     for (i = 0; i < MAXSCROLLS; i++)
     {
 	cp = prbuf;
-	nwords = rnd(4) + 2;
+	nwords = rnd(3) + 2;
 	while (nwords--)
 	{
 	    nsyl = rnd(3) + 1;
@@ -311,15 +280,8 @@ init_names()
 	}
 	*--cp = '\0';
 	s_names[i] = (char *) malloc((unsigned) strlen(prbuf)+1);
-	s_know[i] = FALSE;
-	s_guess[i] = NULL;
 	strcpy(s_names[i], prbuf);
-	if (i > 0)
-	    s_magic[i].mi_prob += s_magic[i-1].mi_prob;
     }
-#ifdef WIZARD
-    badcheck("scrolls", s_magic, MAXSCROLLS);
-#endif
 }
 
 /*
@@ -329,7 +291,6 @@ init_names()
 init_stones()
 {
     register int i, j;
-    bool used[NSTONES];
 
     for (i = 0; i < NSTONES; i++)
 	used[i] = FALSE;
@@ -340,15 +301,8 @@ init_stones()
 	until (!used[j]);
 	used[j] = TRUE;
 	r_stones[i] = stones[j].st_name;
-	r_know[i] = FALSE;
-	r_guess[i] = NULL;
-	if (i > 0)
-	    r_magic[i].mi_prob += r_magic[i-1].mi_prob;
-	r_magic[i].mi_worth += stones[j].st_value;
+	ring_info[i].oi_worth += stones[j].st_value;
     }
-#ifdef WIZARD
-    badcheck("rings", r_magic, MAXRINGS);
-#endif
 }
 
 /*
@@ -359,10 +313,10 @@ init_materials()
 {
     register int i, j;
     register char *str;
-    bool metused[NMETAL], woodused[NWOOD];
+    static bool metused[NMETAL];
 
     for (i = 0; i < NWOOD; i++)
-	woodused[i] = FALSE;
+	used[i] = FALSE;
     for (i = 0; i < NMETAL; i++)
 	metused[i] = FALSE;
     for (i = 0; i < MAXSTICKS; i++)
@@ -382,42 +336,94 @@ init_materials()
 	    else
 	    {
 		j = rnd(NWOOD);
-		if (!woodused[j])
+		if (!used[j])
 		{
 		    ws_type[i] = "staff";
 		    str = wood[j];
-		    woodused[j] = TRUE;
+		    used[j] = TRUE;
 		    break;
 		}
 	    }
 	ws_made[i] = str;
-	ws_know[i] = FALSE;
-	ws_guess[i] = NULL;
-	if (i > 0)
-	    ws_magic[i].mi_prob += ws_magic[i-1].mi_prob;
     }
-#ifdef WIZARD
-    badcheck("sticks", ws_magic, MAXSTICKS);
+}
+
+#ifdef MASTER
+# define	NT	NUMTHINGS, "things"
+# define	MP	MAXPOTIONS, "potions"
+# define	MS	MAXSCROLLS, "scrolls"
+# define	MR	MAXRINGS, "rings"
+# define	MWS	MAXSTICKS, "sticks"
+# define	MW	MAXWEAPONS, "weapons"
+# define	MA	MAXARMORS, "armor"
+#else
+# define	NT	NUMTHINGS
+# define	MP	MAXPOTIONS
+# define	MS	MAXSCROLLS
+# define	MR	MAXRINGS
+# define	MWS	MAXSTICKS
+# define	MW	MAXWEAPONS
+# define	MA	MAXARMORS
+#endif
+
+/*
+ * sumprobs:
+ *	Sum up the probabilities for items appearing
+ */
+sumprobs(info, bound
+#ifdef MASTER
+	, name
+#endif
+)
+struct obj_info *info;
+int bound;
+#ifdef MASTER
+char *name;
+#endif
+{
+    struct obj_info *endp, *start;
+
+    start = info;
+    endp = info + bound;
+    while (++info < endp)
+	info->oi_prob += (info - 1)->oi_prob;
+#ifdef MASTER
+    badcheck(name, start, bound);
 #endif
 }
 
-#ifdef WIZARD
+/*
+ * init_probs:
+ *	Initialize the probabilities for the various items
+ */
+init_probs()
+{
+    sumprobs(things, NT);
+    sumprobs(pot_info, MP);
+    sumprobs(scr_info, MS);
+    sumprobs(ring_info, MR);
+    sumprobs(ws_info, MWS);
+    sumprobs(weap_info, MW);
+    sumprobs(arm_info, MA);
+}
+
+#ifdef MASTER
 /*
  * badcheck:
  *	Check to see if a series of probabilities sums to 100
  */
-badcheck(name, magic, bound)
+badcheck(name, info, bound)
 char *name;
-register struct magic_item *magic;
+register struct obj_info *info;
 register int bound;
 {
-    register struct magic_item *end;
+    register struct obj_info *end;
 
-    if (magic[bound - 1].mi_prob == 100)
+    if (info[bound - 1].oi_prob == 100)
 	return;
-    printf("\nBad percentages for %s:\n", name);
-    for (end = &magic[bound]; magic < end; magic++)
-	printf("%3d%% %s\n", magic->mi_prob, magic->mi_name);
+    printf("\nBad percentages for %s (bound = %d):\n", name, bound);
+    for (end = &info[bound]; info < end; info++)
+	printf("%3d%% %s\n", info->oi_prob, info->oi_name);
     printf("[hit RETURN to continue]");
     fflush(stdout);
     while (getchar() != '\n')
@@ -426,11 +432,13 @@ register int bound;
 #endif
 
 /*
- * rnd_color:
- *	Pick a random color name and return it
+ * pick_color:
+ *	If he is halucinating, pick a random color name and return it,
+ *	otherwise return the given color.
  */
 char *
-rnd_color()
+pick_color(col)
+char *col;
 {
-    return (rainbow[rnd(NCOLORS)]);
+    return (on(player, ISHALU) ? rainbow[rnd(NCOLORS)] : col);
 }

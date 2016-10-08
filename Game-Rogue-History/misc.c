@@ -1,75 +1,47 @@
+/*
+ * All sorts of miscellaneous routines
+ *
+ * @(#)misc.c	4.66 (Berkeley) 08/06/83
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980-1983, 1985, 1999 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
+ */
+
 #include <curses.h>
 #include "rogue.h"
 #include <ctype.h>
 
 /*
- * All sorts of miscellaneous routines
- *
- * @(#)misc.c	4.37 (NMT from Berkeley 5.2) 8/25/83
- */
-
-/*
- * tr_name:
- *	Print the name of a trap
- */
-char *
-tr_name(type)
-char type;
-{
-    switch (type)
-    {
-	case T_DOOR:
-	    return terse ? "a trapdoor" : "you found a trapdoor";
-	case T_BEAR:
-	    return terse ? "a beartrap" : "you found a beartrap";
-	case T_SLEEP:
-	    return terse ? "a sleeping gas trap":"you found a sleeping gas trap";
-	case T_ARROW:
-	    return terse ? "an arrow trap" : "you found an arrow trap";
-	case T_TELEP:
-	    return terse ? "a teleport trap" : "you found a teleport trap";
-	case T_DART:
-	    return terse ? "a dart trap" : "you found a poison dart trap";
-    }
-    msg("wierd trap: %d", type);
-    return NULL;
-}
-
-/*
  * look:
  *	A quick glance all around the player
  */
-look(wakeup)
-bool wakeup;
-{
-    register int x, y;
-    register char ch;
-    register int index;
-    register THING *tp;
-    register struct room *rp;
-    register int ey, ex;
-    register int passcount = 0;
-    register char pfl, *fp, pch;
-    register int sy, sx, sumhero, diffhero;
 
+look(bool wakeup)
+{
+    int x, y;
+    chtype ch;
+    THING *tp;
+    PLACE *pp;
+    struct room *rp;
+    int ey, ex;
+    int passcount;
+    char pfl, *fp, pch;
+    int sy, sx, sumhero = 0, diffhero = 0;
+# ifdef DEBUG
+    static bool done = FALSE;
+
+    if (done)
+	return;
+    done = TRUE;
+# endif /* DEBUG */
+    passcount = 0;
     rp = proom;
     if (!ce(oldpos, hero))
     {
-	if ((oldrp->r_flags & (ISGONE|ISDARK)) == ISDARK && !on(player,ISBLIND))
-	{
-	    ey = oldpos.y + 1;
-	    ex = oldpos.x + 1;
-	    sy = oldpos.y - 1;
-	    for (x = oldpos.x - 1; x <= ex; x++)
-		for (y = sy; y <= ey; y++)
-		{
-		    if (y == hero.y && x == hero.x)
-			continue;
-		    move(y, x);
-		    if (inch() == FLOOR)
-			addch(' ');
-		}
-	}
+	erase_lamp(&oldpos, oldrp);
 	oldpos = hero;
 	oldrp = rp;
     }
@@ -82,55 +54,39 @@ bool wakeup;
 	sumhero = hero.y + hero.x;
 	diffhero = hero.y - hero.x;
     }
-    index = INDEX(hero.y, hero.x);
-    pfl = _flags[index];
-    pch = _level[index];
+    pp = INDEX(hero.y, hero.x);
+    pch = pp->p_ch;
+    pfl = pp->p_flags;
+
     for (y = sy; y <= ey; y++)
-	if (y > 0 && y < LINES - 1) for (x = sx; x <= ex; x++)
+	if (y > 0 && y < NUMLINES - 1) for (x = sx; x <= ex; x++)
 	{
-	    if (x < 0 || x >= COLS)
+	    if (x < 0 || x >= NUMCOLS)
 		continue;
 	    if (!on(player, ISBLIND))
 	    {
 		if (y == hero.y && x == hero.x)
 		    continue;
 	    }
-	    else if (y != hero.y || x != hero.x)
-		continue;
 
-	    index = INDEX(y, x);
-	    /*
-	     * THIS REPLICATES THE moat() MACRO.  IF MOAT IS CHANGED,
-	     * THIS MUST BE CHANGED ALSO
-	     */
-	    fp = &_flags[index];
-	    ch = _level[index];
+	    pp = INDEX(y, x);
+	    ch = pp->p_ch;
+	    if (ch == ' ')		/* nothing need be done with a ' ' */
+		    continue;
+	    fp = &pp->p_flags;
 	    if (pch != DOOR && ch != DOOR)
 		if ((pfl & F_PASS) != (*fp & F_PASS))
 		    continue;
-		else if ((*fp & F_PASS) && (*fp & F_PNUM) != (pfl & F_PNUM))
-		    continue;
-
-	    if ((tp = _monst[index]) == NULL)
+	    if (((*fp & F_PASS) || ch == DOOR) && 
+		 ((pfl & F_PASS) || pch == DOOR))
 	    {
-		if (after && on(player, ISTrip))
-			switch (ch)
-			{
-			    case FLOOR:
-			    case ' ':
-			    case PASSAGE:
-			    case '-':
-			    case '|':
-			    case DOOR:
-			    case TRAP:
-				break;
-			    default:
-				if (y != stairs.y || x != stairs.x ||
-				    !seenstairs)
-					ch = rnd_thing();
-				break;
-			}
+		if (hero.x != x && hero.y != y &&
+		    !step_ok(chat(y, hero.x)) && !step_ok(chat(hero.y, x)))
+			continue;
 	    }
+
+	    if ((tp = pp->p_monst) == NULL)
+		ch = trip_ch(y, x, ch);
 	    else
 		if (on(player, SEEMONST) && on(*tp, ISINVIS))
 		{
@@ -142,25 +98,28 @@ bool wakeup;
 		{
 		    if (wakeup)
 			wake_monster(y, x);
-		    if (tp->t_oldch != ' ' ||
-			(!(rp->r_flags & ISDARK) && !on(player, ISBLIND)))
-			    tp->t_oldch = _level[index];
 		    if (see_monst(tp))
-			ch = tp->t_disguise;
+			if (on(player, ISHALU))
+			    ch = rnd(26) + 'A';
+			else
+			    ch = tp->t_disguise;
 		}
+	    if (on(player, ISBLIND) && (y != hero.y || x != hero.x))
+		continue;
 
-	    if (tp == NULL || !on(player, ISTrip))
-	    {
-		move(y, x);
-		if (ch != inch())
-		    addch(ch);
-	    }
+	    move(y, x);
+
+	    if ((proom->r_flags & ISDARK) && !see_floor && ch == FLOOR)
+		ch = ' ';
+
+	    if (tp != NULL || ch != inch())
+		addch(ch);
 
 	    if (door_stop && !firstmove && running)
 	    {
 		switch (runch)
 		{
-		    when 'h':
+		    case 'h':
 			if (x == ex)
 			    continue;
 		    when 'j':
@@ -209,10 +168,77 @@ bool wakeup;
     if (door_stop && !firstmove && passcount > 1)
 	running = FALSE;
     if (!running || !jump)
-    {
-	move(hero.y, hero.x);
-	addch(PLAYER);
-    }
+	mvaddch(hero.y, hero.x, PLAYER);
+# ifdef DEBUG
+    done = FALSE;
+# endif /* DEBUG */
+}
+
+/*
+ * trip_ch:
+ *	Return the character appropriate for this space, taking into
+ *	account whether or not the player is tripping.
+ */
+int
+trip_ch(int y, int x, char ch)
+{
+    if (on(player, ISHALU) && after)
+	switch (ch)
+	{
+	    case FLOOR:
+	    case ' ':
+	    case PASSAGE:
+	    case '-':
+	    case '|':
+	    case DOOR:
+	    case TRAP:
+		break;
+	    default:
+		if (y != stairs.y || x != stairs.x || !seenstairs)
+		    ch = rnd_thing();
+		break;
+	}
+    return ch;
+}
+
+/*
+ * erase_lamp:
+ *	Erase the area shown by a lamp in a dark room.
+ */
+
+erase_lamp(coord *pos, struct room *rp)
+{
+    int y, x, ey, sy, ex;
+
+    if (!(see_floor && (rp->r_flags & (ISGONE|ISDARK)) == ISDARK
+	&& !on(player,ISBLIND)))
+	    return;
+
+    ey = pos->y + 1;
+    ex = pos->x + 1;
+    sy = pos->y - 1;
+    for (x = pos->x - 1; x <= ex; x++)
+	for (y = sy; y <= ey; y++)
+	{
+	    if (y == hero.y && x == hero.x)
+		continue;
+	    move(y, x);
+	    if (inch() == FLOOR)
+		addch(' ');
+	}
+}
+
+/*
+ * show_floor:
+ *	Should we show the floor in her room at this time?
+ */
+bool
+show_floor()
+{
+    if ((proom->r_flags & (ISGONE|ISDARK)) == ISDARK && !on(player, ISBLIND))
+	return see_floor;
+    else
+	return TRUE;
 }
 
 /*
@@ -220,21 +246,21 @@ bool wakeup;
  *	Find the unclaimed object at y, x
  */
 THING *
-find_obj(y, x)
-register int y, x;
+find_obj(int y, int x)
 {
-    register THING *op;
+    THING *obj;
 
-    for (op = lvl_obj; op != NULL; op = next(op))
+    for (obj = lvl_obj; obj != NULL; obj = next(obj))
     {
-	if (op->o_pos.y == y && op->o_pos.x == x)
-		return op;
+	if (obj->o_pos.y == y && obj->o_pos.x == x)
+		return obj;
     }
-#ifdef WIZARD
-    debug(sprintf(prbuf, "Non-object %d,%d", y, x));
+#ifdef MASTER
+    msg(sprintf(prbuf, "Non-object %d,%d", y, x));
     return NULL;
 #else
     /* NOTREACHED */
+    return NULL;
 #endif
 }
 
@@ -242,9 +268,10 @@ register int y, x;
  * eat:
  *	She wants to eat something, so let her try
  */
+
 eat()
 {
-    register THING *obj;
+    THING *obj;
 
     if ((obj = get_item("eat", FOOD)) == NULL)
 	return;
@@ -255,12 +282,6 @@ eat()
 	else
 	    msg("that's Inedible!");
 	return;
-    }
-    inpack--;
-    if (--obj->o_count < 1)
-    {
-	detach(pack, obj);
-	discard(obj);
     }
     if (food_left < 0)
 	food_left = 0;
@@ -275,32 +296,56 @@ eat()
 	if (rnd(100) > 70)
 	{
 	    pstats.s_exp++;
-	    msg("%s, this food tastes awful",
-		on(player, ISTrip) ? "bummer" : "yuk");
+	    msg("%s, this food tastes awful", choose_str("bummer", "yuk"));
 	    check_level();
 	}
 	else
-	    msg("%s, that tasted good", on(player, ISTrip) ? "oh, wow" : "yum");
+	    msg("%s, that tasted good", choose_str("oh, wow", "yum"));
+    leave_pack(obj, FALSE, FALSE);
+}
+
+/*
+ * check_level:
+ *	Check to see if the guy has gone up a level.
+ */
+
+check_level()
+{
+    int i, add, olevel;
+
+    for (i = 0; e_levels[i] != 0; i++)
+	if (e_levels[i] > pstats.s_exp)
+	    break;
+    i++;
+    olevel = pstats.s_lvl;
+    pstats.s_lvl = i;
+    if (i > olevel)
+    {
+	add = roll(i - olevel, 10);
+	max_hp += add;
+	pstats.s_hpt += add;
+	msg("welcome to level %d", i);
+    }
 }
 
 /*
  * chg_str:
- *	Used to modify the playes strength.  It keeps track of the
+ *	used to modify the playes strength.  It keeps track of the
  *	highest it has been, just in case
  */
-chg_str(amt)
-register int amt;
+
+chg_str(int amt)
 {
-    str_t comp;
+    auto str_t comp;
 
     if (amt == 0)
 	return;
     add_str(&pstats.s_str, amt);
     comp = pstats.s_str;
     if (ISRING(LEFT, R_ADDSTR))
-	add_str(&comp, -cur_ring[LEFT]->o_ac);
+	add_str(&comp, -cur_ring[LEFT]->o_arm);
     if (ISRING(RIGHT, R_ADDSTR))
-	add_str(&comp, -cur_ring[RIGHT]->o_ac);
+	add_str(&comp, -cur_ring[RIGHT]->o_arm);
     if (comp > max_stats.s_str)
 	max_stats.s_str = comp;
 }
@@ -309,9 +354,7 @@ register int amt;
  * add_str:
  *	Perform the actual add, checking upper and lower bound limits
  */
-add_str(sp, amt)
-register str_t *sp;
-int amt;
+add_str(str_t *sp, int amt)
 {
     if ((*sp += amt) < 3)
 	*sp = 3;
@@ -323,15 +366,14 @@ int amt;
  * add_haste:
  *	Add a haste to the player
  */
-add_haste(potion)
-bool potion;
+bool
+add_haste(bool potion)
 {
     if (on(player, ISHASTE))
     {
 	no_command += rnd(8);
-	player.t_flags &= ~ISRUN;
+	player.t_flags &= ~(ISRUN|ISHASTE);
 	extinguish(nohaste);
-	player.t_flags &= ~ISHASTE;
 	msg("you faint from exhaustion");
 	return FALSE;
     }
@@ -348,12 +390,13 @@ bool potion;
  * aggravate:
  *	Aggravate all the monsters on this level
  */
+
 aggravate()
 {
-    register THING *mi;
+    THING *mp;
 
-    for (mi = mlist; mi != NULL; mi = next(mi))
-	runto(&mi->t_pos);
+    for (mp = mlist; mp != NULL; mp = next(mp))
+	runto(&mp->t_pos);
 }
 
 /*
@@ -362,8 +405,7 @@ aggravate()
  *	"an".
  */
 char *
-vowelstr(str)
-register char *str;
+vowelstr(char *str)
 {
     switch (*str)
     {
@@ -382,8 +424,8 @@ register char *str;
  * is_current:
  *	See if the object is one of the currently used items
  */
-is_current(obj)
-register THING *obj;
+bool
+is_current(THING *obj)
 {
     if (obj == NULL)
 	return FALSE;
@@ -403,35 +445,51 @@ register THING *obj;
  *      Set up the direction co_ordinate for use in varios "prefix"
  *	commands
  */
+bool
 get_dir()
 {
-    register char *prompt;
-    register bool gotit;
+    char *prompt;
+    bool gotit;
+    static coord last_delt= {0,0};
 
-    if (!terse)
-	msg(prompt = "which direction? ");
-    else
-	prompt = "direction: ";
-    do
+    if (again && last_dir != '\0')
     {
-	gotit = TRUE;
-	switch (readchar())
+	delta.y = last_delt.y;
+	delta.x = last_delt.x;
+	dir_ch = last_dir;
+    }
+    else
+    {
+	if (!terse)
+	    msg(prompt = "which direction? ");
+	else
+	    prompt = "direction: ";
+	do
 	{
-	    when 'h': case'H': delta.y =  0; delta.x = -1;
-	    when 'j': case'J': delta.y =  1; delta.x =  0;
-	    when 'k': case'K': delta.y = -1; delta.x =  0;
-	    when 'l': case'L': delta.y =  0; delta.x =  1;
-	    when 'y': case'Y': delta.y = -1; delta.x = -1;
-	    when 'u': case'U': delta.y = -1; delta.x =  1;
-	    when 'b': case'B': delta.y =  1; delta.x = -1;
-	    when 'n': case'N': delta.y =  1; delta.x =  1;
-	    when ESCAPE: return FALSE;
-	    otherwise:
-		mpos = 0;
-		msg(prompt);
-		gotit = FALSE;
-	}
-    } until (gotit);
+	    gotit = TRUE;
+	    switch (dir_ch = readchar())
+	    {
+		case 'h': case'H': delta.y =  0; delta.x = -1;
+		when 'j': case'J': delta.y =  1; delta.x =  0;
+		when 'k': case'K': delta.y = -1; delta.x =  0;
+		when 'l': case'L': delta.y =  0; delta.x =  1;
+		when 'y': case'Y': delta.y = -1; delta.x = -1;
+		when 'u': case'U': delta.y = -1; delta.x =  1;
+		when 'b': case'B': delta.y =  1; delta.x = -1;
+		when 'n': case'N': delta.y =  1; delta.x =  1;
+		when ESCAPE: last_dir = '\0'; reset_last(); return FALSE;
+		otherwise:
+		    mpos = 0;
+		    msg(prompt);
+		    gotit = FALSE;
+	    }
+	} until (gotit);
+	if (isupper(dir_ch))
+	    dir_ch = tolower(dir_ch);
+	last_dir = dir_ch;
+	last_delt.y = delta.y;
+	last_delt.x = delta.x;
+    }
     if (on(player, ISHUH) && rnd(5) == 0)
 	do
 	{
@@ -446,8 +504,8 @@ get_dir()
  * sign:
  *	Return the sign of the number
  */
-sign(nm)
-register int nm;
+int
+sign(int nm)
 {
     if (nm < 0)
 	return -1;
@@ -457,34 +515,38 @@ register int nm;
 
 /*
  * spread:
- *	Give a spread around a given number (+/- 10%)
+ *	Give a spread around a given number (+/- 20%)
  */
-spread(nm)
-register int nm;
+int
+spread(int nm)
 {
-    return nm - nm / 10 + rnd(nm / 5);
+    return nm - nm / 20 + rnd(nm / 10);
 }
 
 /*
  * call_it:
  *	Call an object something after use.
  */
-call_it(know, guess)
-register bool know;
-register char **guess;
+
+call_it(struct obj_info *info)
 {
-    if (know && *guess)
+    if (info->oi_know)
     {
-	cfree(*guess);
-	*guess = NULL;
+	if (info->oi_guess)
+	{
+	    free(info->oi_guess);
+	    info->oi_guess = NULL;
+	}
     }
-    else if (!know && askme && *guess == NULL)
+    else if (!info->oi_guess)
     {
 	msg(terse ? "call it: " : "what do you want to call it? ");
 	if (get_str(prbuf, stdscr) == NORM)
 	{
-	    *guess = malloc((unsigned int) strlen(prbuf) + 1);
-	    strcpy(*guess, prbuf);
+	    if (info->oi_guess != NULL)
+		free(info->oi_guess);
+	    info->oi_guess = malloc((unsigned int) strlen(prbuf) + 1);
+	    strcpy(info->oi_guess, prbuf);
 	}
     }
 }
@@ -493,11 +555,12 @@ register char **guess;
  * rnd_thing:
  *	Pick a random thing appropriate for this level
  */
+int
 rnd_thing()
 {
-    register int i;
+    int i;
     static char thing_list[] = {
-	POTION, SCROLL, RING, STICK, FOOD, WEAPON, ARMOR, STAIRS, AMULET
+	POTION, SCROLL, RING, STICK, FOOD, WEAPON, ARMOR, STAIRS, GOLD, AMULET
     };
 
     if (level >= AMULETLEVEL)
@@ -505,4 +568,15 @@ rnd_thing()
     else
         i = rnd(sizeof thing_list / sizeof (char) - 1);
     return thing_list[i];
+}
+
+/*
+ str str:
+ *	Choose the first or second string depending on whether it the
+ *	player is tripping
+ */
+char *
+choose_str(char *ts, char *ns)
+{
+	return (on(player, ISHALU) ? ts : ns);
 }

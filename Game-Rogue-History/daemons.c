@@ -1,7 +1,13 @@
 /*
  * All the daemon and fuse functions are in here
  *
- * @(#)daemons.c	4.15 (NMT from Berkeley 5.2) 8/25/83
+ * @(#)daemons.c	4.24 (Berkeley) 02/05/99
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980-1983, 1985, 1999 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 #include <curses.h>
@@ -44,16 +50,16 @@ doctor()
  */
 swander()
 {
-    daemon(rollwand, 0, BEFORE);
+    start_daemon(rollwand, 0, BEFORE);
 }
 
 /*
  * rollwand:
  *	Called to roll to see if a wandering monster starts up
  */
+int between = 0;
 rollwand()
 {
-    static int between = 0;
 
     if (++between >= 4)
     {
@@ -74,7 +80,7 @@ rollwand()
 unconfuse()
 {
     player.t_flags &= ~ISHUH;
-    msg("you feel less %s now", on(player, ISTrip) ? "trippy" : "confused");
+    msg("you feel less %s now", choose_str("trippy", "confused"));
 }
 
 /*
@@ -87,10 +93,7 @@ unsee()
 
     for (th = mlist; th != NULL; th = next(th))
 	if (on(*th, ISINVIS) && see_monst(th))
-	{
-	    move(th->t_pos.y, th->t_pos.x);
-	    addch(th->t_oldch);
-	}
+	    mvaddch(th->t_pos.y, th->t_pos.x, th->t_oldch);
     player.t_flags &= ~CANSEE;
 }
 
@@ -106,10 +109,8 @@ sight()
 	player.t_flags &= ~ISBLIND;
 	if (!(proom->r_flags & ISGONE))
 	    enter_room(&hero);
-	if (on(player, ISTrip))
-	    msg("far out!  Everything is all cosmic again");
-	else
-	    msg("the veil of darkness lifts");
+	msg(choose_str("far out!  Everything is all cosmic again",
+		       "the veil of darkness lifts"));
     }
 }
 
@@ -130,6 +131,7 @@ nohaste()
 stomach()
 {
     register int oldfood;
+    int orig_hungry = hungry_state;
 
     if (food_left <= 0)
     {
@@ -141,20 +143,11 @@ stomach()
 	if (no_command || rnd(5) != 0)
 	    return;
 	no_command += rnd(8) + 4;
-	player.t_flags &= ~ISRUN;
-	running = FALSE;
-	count = 0;
 	hungry_state = 3;
-	if (on(player, ISTrip)) {
-	    if (!terse)
-		addmsg("the munchies overpower your motor capabilities.  ");
-	    msg("You freak out");
-	}
-	else {
-	    if (!terse)
-		addmsg("you feel too weak from lack of food.  ");
-	    msg("You faint");
-	}
+	if (!terse)
+	    addmsg(choose_str("the munchies overpower your motor capabilities.  ",
+			      "you feel too weak from lack of food.  "));
+	msg(choose_str("You freak out", "You faint"));
     }
     else
     {
@@ -164,26 +157,25 @@ stomach()
 	if (food_left < MORETIME && oldfood >= MORETIME)
 	{
 	    hungry_state = 2;
-	    if (on(player, ISTrip))
-		msg("the munchies are interfering with your motor capabilites");
-	    else
-		msg("you are starting to feel weak");
+	    msg(choose_str("the munchies are interfering with your motor capabilites",
+			   "you are starting to feel weak"));
 	}
 	else if (food_left < 2 * MORETIME && oldfood >= 2 * MORETIME)
 	{
 	    hungry_state = 1;
-	    if (on(player, ISTrip)) {
-		if (!terse)
-		    addmsg("you are ");
-		msg("getting the munchies");
-	    }
+	    if (terse)
+		msg(choose_str("getting the munchies", "getting hungry"));
 	    else
-		if (!terse)
-		    msg("you are starting to get hungry");
-		else
-		    msg("getting hungry");
+		msg(choose_str("you are getting the munchies",
+			       "you are starting to get hungry"));
 	}
     }
+    if (hungry_state != orig_hungry) { 
+        player.t_flags &= ~ISRUN; 
+        running = FALSE; 
+        to_death = FALSE; 
+        count = 0; 
+    } 
 }
 
 /*
@@ -195,10 +187,11 @@ come_down()
     register THING *tp;
     register bool seemonst;
 
-    if (!on(player, ISTrip))
+    if (!on(player, ISHALU))
 	return;
 
     kill_daemon(visuals);
+    player.t_flags &= ~ISHALU;
 
     if (on(player, ISBLIND))
 	return;
@@ -211,28 +204,24 @@ come_down()
 	    mvaddch(tp->o_pos.y, tp->o_pos.x, tp->o_type);
 
     /*
-     * undo the stairs
-     */
-    if (seenstairs)
-	mvaddch(stairs.y, stairs.x, STAIRS);
-
-    /*
      * undo the monsters
      */
     seemonst = on(player, SEEMONST);
     for (tp = mlist; tp != NULL; tp = next(tp))
+    {
+	move(tp->t_pos.y, tp->t_pos.x);
 	if (cansee(tp->t_pos.y, tp->t_pos.x))
 	    if (!on(*tp, ISINVIS) || on(player, CANSEE))
-		mvaddch(tp->t_pos.y, tp->t_pos.x, tp->t_disguise);
+		addch(tp->t_disguise);
 	    else
-		mvaddch(tp->t_pos.y, tp->t_pos.x, chat(tp->t_pos.y, tp->t_pos.x));
+		addch(chat(tp->t_pos.y, tp->t_pos.x));
 	else if (seemonst)
 	{
 	    standout();
-	    mvaddch(tp->t_pos.y, tp->t_pos.x, tp->t_type);
+	    addch(tp->t_type);
 	    standend();
 	}
-    player.t_flags &= ~ISTrip;
+    }
     msg("Everything looks SO boring now.");
 }
 
@@ -245,7 +234,7 @@ visuals()
     register THING *tp;
     register bool seemonst;
 
-    if (!after)
+    if (!after || (running && jump))
 	return;
     /*
      * change the things
@@ -258,22 +247,38 @@ visuals()
      * change the stairs
      */
     if (!seenstairs && cansee(stairs.y, stairs.x))
-	    mvaddch(stairs.y, stairs.x, rnd_thing());
+	mvaddch(stairs.y, stairs.x, rnd_thing());
 
     /*
      * change the monsters
      */
     seemonst = on(player, SEEMONST);
     for (tp = mlist; tp != NULL; tp = next(tp))
+    {
+	move(tp->t_pos.y, tp->t_pos.x);
 	if (see_monst(tp))
-	    if (tp->t_type == 'M' && tp->t_disguise != 'M')
-		mvaddch(tp->t_pos.y, tp->t_pos.x, rnd_thing());
+	{
+	    if (tp->t_type == 'X' && tp->t_disguise != 'X')
+		addch(rnd_thing());
 	    else
-		mvaddch(tp->t_pos.y, tp->t_pos.x, rnd(26) + 'A');
+		addch(rnd(26) + 'A');
+	}
 	else if (seemonst)
 	{
 	    standout();
-	    mvaddch(tp->t_pos.y, tp->t_pos.x, rnd(26) + 'A');
+	    addch(rnd(26) + 'A');
 	    standend();
 	}
+    }
+}
+
+/*
+ * land:
+ *	Land from a levitation potion
+ */
+land()
+{
+    player.t_flags &= ~ISLEVIT;
+    msg(choose_str("bummer!  You've hit the ground",
+		   "you float gently to the ground"));
 }

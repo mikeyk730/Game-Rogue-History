@@ -1,22 +1,27 @@
-#include <curses.h>
-#include "rogue.h"
-
 /*
  * Routines dealing specifically with rings
  *
- * @(#)rings.c	4.14 (NMT from Berkeley 5.2) 8/25/83
+ * @(#)rings.c	4.19 (Berkeley) 05/29/83
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980-1983, 1985, 1999 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
-char *malloc();
+#include <curses.h>
+#include "rogue.h"
 
 /*
  * ring_on:
  *	Put a ring on a hand
  */
+
 ring_on()
 {
-    register THING *obj;
-    register int ring;
+    THING *obj;
+    int ring;
 
     obj = get_item("put on", RING);
     /*
@@ -64,7 +69,7 @@ ring_on()
     switch (obj->o_which)
     {
 	case R_ADDSTR:
-	    chg_str(obj->o_ac);
+	    chg_str(obj->o_arm);
 	    break;
 	case R_SEEINVIS:
 	    invis_on();
@@ -76,18 +81,18 @@ ring_on()
 
     if (!terse)
 	addmsg("you are now wearing ");
-    msg("%s (%c)", inv_name(obj, TRUE), pack_char(obj));
+    msg("%s (%c)", inv_name(obj, TRUE), obj->o_packch);
 }
 
 /*
  * ring_off:
- *	Take off a ring
+ *	take off a ring
  */
+
 ring_off()
 {
-    register int ring;
-    register THING *obj;
-    register char packchar;
+    int ring;
+    THING *obj;
 
     if (cur_ring[LEFT] == NULL && cur_ring[RIGHT] == NULL)
     {
@@ -111,18 +116,18 @@ ring_off()
 	msg("not wearing such a ring");
 	return;
     }
-    packchar = pack_char(obj);
     if (dropcheck(obj))
-	msg("was wearing %s(%c)", inv_name(obj, TRUE), packchar);
+	msg("was wearing %s(%c)", inv_name(obj, TRUE), obj->o_packch);
 }
 
 /*
  * gethand:
  *	Which hand is the hero interested in?
  */
+int
 gethand()
 {
-    register int c;
+    int c;
 
     for (;;)
     {
@@ -148,32 +153,28 @@ gethand()
  * ring_eat:
  *	How much food does this ring use up?
  */
-ring_eat(hand)
-register int hand;
+int
+ring_eat(int hand)
 {
-    if (cur_ring[hand] == NULL)
+    THING *ring;
+    int eat;
+    static int uses[] = {
+	 1,	/* R_PROTECT */		 1,	/* R_ADDSTR */
+	 1,	/* R_SUSTSTR */		-3,	/* R_SEARCH */
+	-5,	/* R_SEEINVIS */	 0,	/* R_NOP */
+	 0,	/* R_AGGR */		-3,	/* R_ADDHIT */
+	-3,	/* R_ADDDAM */		 2,	/* R_REGEN */
+	-2,	/* R_DIGEST */		 0,	/* R_TELEPORT */
+	 1,	/* R_STEALTH */		 1	/* R_SUSTARM */
+    };
+
+    if ((ring = cur_ring[hand]) == NULL)
 	return 0;
-    switch (cur_ring[hand]->o_which)
-    {
-	case R_REGEN:
-	    return 2;
-	case R_SUSTSTR:
-	case R_SUSTARM:
-	case R_PROTECT:
-	case R_ADDSTR:
-	case R_STEALTH:
-	    return 1;
-	case R_SEARCH:
-	case R_ADDHIT:
-	case R_ADDDAM:
-	    return (rnd(3) == 0);
-	case R_DIGEST:
-	    return -rnd(2);
-	case R_SEEINVIS:
-	    return (rnd(5) == 0);
-	default:
-	    return 0;
-    }
+    if ((eat = uses[ring->o_which]) < 0)
+	eat = (rnd(-eat) == 0);
+    if (ring->o_which == R_DIGEST)
+	eat = -eat;
+    return eat;
 }
 
 /*
@@ -181,21 +182,19 @@ register int hand;
  *	Print ring bonuses
  */
 char *
-ring_num(obj)
-register THING *obj;
+ring_num(THING *obj)
 {
-    static char buf[5];
+    static char buf[10];
 
     if (!(obj->o_flags & ISKNOW))
 	return "";
     switch (obj->o_which)
     {
-	when R_PROTECT:
+	case R_PROTECT:
 	case R_ADDSTR:
 	case R_ADDDAM:
 	case R_ADDHIT:
-	    buf[0] = ' ';
-	    strcpy(&buf[1], num(obj->o_ac, 0, RING));
+	    sprintf(buf, " [%s]", num(obj->o_arm, 0, RING));
 	otherwise:
 	    return "";
     }

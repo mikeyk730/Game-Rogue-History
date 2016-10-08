@@ -1,36 +1,51 @@
 /*
  * save and restore routines
  *
- * @(#)save.c	4.20 (NMT from Berkeley 5.2) 8/25/83
+ * @(#)save.c	4.33 (Berkeley) 06/01/83
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980-1983, 1985, 1999 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 #include <curses.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <errno.h>
 #include <signal.h>
 #include "rogue.h"
+#include "score.h"
+
+#ifndef NSIG
+#define NSIG 32
+#endif
 
 typedef struct stat STAT;
 
-extern char *sys_errlist[], version[], encstr[];
-#ifndef	attron
+extern char version[], encstr[];
+
+#ifdef	attron
+# define	CE	clr_eol
+#else	/* attron */
 extern bool _endwin;
-#endif	attron
-extern int errno;
+#endif	/* attron */
 
-char *sbrk();
+static char frob;
 
-STAT sbuf;
+static STAT sbuf;
 
 /*
  * save_game:
  *	Implement the "save game" command
  */
+
 save_game()
 {
-    register FILE *savef;
-    register int c;
-    char buf[MAXSTR];
+    FILE *savef;
+    int c;
+    auto char buf[MAXSTR];
 
     /*
      * get file name
@@ -42,12 +57,12 @@ over:
 	for (;;)
 	{
 	    msg("save file (%s)? ", file_name);
-	    c = getchar();
+	    c = readchar();
 	    mpos = 0;
 	    if (c == ESCAPE)
 	    {
 		msg("");
-		return FALSE;
+		return;
 	    }
 	    else if (c == 'n' || c == 'N' || c == 'y' || c == 'Y')
 		break;
@@ -56,6 +71,8 @@ over:
 	}
 	if (c == 'y' || c == 'Y')
 	{
+	    addstr("Yes\n");
+	    refresh();
 	    strcpy(buf, file_name);
 	    goto gotfile;
 	}
@@ -68,9 +85,9 @@ over:
 	buf[0] = '\0';
 	if (get_str(buf, stdscr) == QUIT)
 	{
-quit:
+quit_it:
 	    msg("");
-	    return FALSE;
+	    return;
 	}
 	mpos = 0;
 gotfile:
@@ -84,7 +101,7 @@ gotfile:
 		msg("File exists.  Do you wish to overwrite it?");
 		mpos = 0;
 		if ((c = readchar()) == ESCAPE)
-		    goto quit;
+		    goto quit_it;
 		if (c == 'y' || c == 'Y')
 		    break;
 		else if (c == 'n' || c == 'N')
@@ -93,18 +110,15 @@ gotfile:
 		    msg("Please answer Y or N");
 	    }
 	    msg("file name: %s", buf);
+	    md_unlink(file_name);
 	}
 	strcpy(file_name, buf);
 	if ((savef = fopen(file_name, "w")) == NULL)
-	    msg(sys_errlist[errno]);	/* fake perror() */
+	    msg(strerror(errno));
     } while (savef == NULL);
 
-    /*
-     * write out encrpyted file (after a stat)
-     * The fwrite is to force allocation of the buffer before the write
-     */
     save_file(savef);
-    return TRUE;
+    /* NOTREACHED */
 }
 
 /*
@@ -112,45 +126,53 @@ gotfile:
  *	Automatically save a file.  This is used if a HUP signal is
  *	recieved
  */
-auto_save()
+
+void
+auto_save(int sig)
 {
-    register FILE *savef;
-    register int i;
+    FILE *savef;
+    int i;
 
     for (i = 0; i < NSIG; i++)
 	signal(i, SIG_IGN);
-    if (file_name[0] != '\0' && (savef = fopen(file_name, "w")) != NULL)
-	save_file(savef);
-    endwin();
-    exit(1);
+    if (file_name[0] != '\0' && ((savef = fopen(file_name, "w")) != NULL ||
+	(md_unlink_open_file(file_name, fileno(savef)) >= 0 && (savef = fopen(file_name, "w")) != NULL)))
+	    save_file(savef);
+    exit(0);
 }
 
 /*
  * save_file:
  *	Write the saved game on the file
  */
-save_file(savef)
-register FILE *savef;
+
+save_file(FILE *savef)
 {
-    /*
-     * close any open score file
-     */
-    close(fd);
-    move(LINES-1, 0);
-    refresh();
-    fstat(fileno(savef), &sbuf);
+    char buf[80];
+    mvcur(0, COLS - 1, LINES - 1, 0); 
+    putchar('\n');
+    endwin();
+    resetltchars();
+    chmod(file_name, 0400);
     /*
      * DO NOT DELETE.  This forces stdio to allocate the output buffer
      * so that malloc doesn't get confused on restart
      */
-    fwrite("junk", 1, 5, savef);
+    frob = 0;
+    fwrite(&frob, sizeof frob, 1, savef);
 
-    fseek(savef, 0L, 0);
 #ifndef	attron
     _endwin = TRUE;
-#endif	attron
-    encwrite(version, sbrk(0) - version, savef);
+#endif	/* attron */
+    fstat(fileno(savef), &sbuf);
+    encwrite(version, strlen(version)+1, savef);
+    sprintf(buf,"%d x %d\n", LINES, COLS);
+    encwrite(buf,80,savef);
+    rs_save_file(savef);
+    fflush(savef);
+    fstat(fileno(savef), &sbuf);
     fclose(savef);
+    exit(0);
 }
 
 /*
@@ -158,16 +180,16 @@ register FILE *savef;
  *	Restore a saved game from a file with elaborate checks for file
  *	integrity from cheaters
  */
-restore(file, envp)
-register char *file;
-char **envp;
+bool
+restore(char *file, char **envp)
 {
-    register int inf;
-    register bool syml;
-    register char *sp;
+    int inf;
+    bool syml;
+    char fb;
     extern char **environ;
-    char buf[MAXSTR];
-    STAT sbuf2;
+    auto char buf[MAXSTR];
+    auto STAT sbuf2;
+    int lines, cols;
 
     if (strcmp(file, "-r") == 0)
 	file = file_name;
@@ -182,75 +204,86 @@ char **envp;
     signal(SIGTSTP, SIG_IGN);
 # endif
 #endif
-
     if ((inf = open(file, 0)) < 0)
     {
 	perror(file);
 	return FALSE;
     }
     fstat(inf, &sbuf2);
-    syml = symlink(file);
-    if (
-#ifdef WIZARD
-	!wizard &&
-#endif
-	unlink(file) < 0)
-    {
-	printf("Cannot unlink file\n");
-	return FALSE;
-    }
+    syml = is_symlink(file);
+
 
     fflush(stdout);
-    encread(buf, strlen(version) + 1, inf);
+    read(inf, &frob, sizeof frob);
+    fb = frob;
+    encread(buf, (unsigned) strlen(version) + 1, inf);
     if (strcmp(buf, version) != 0)
     {
 	printf("Sorry, saved game is out of date.\n");
 	return FALSE;
     }
+    encread(buf,80,inf);
+    sscanf(buf,"%d x %d\n", &lines, &cols);
 
-    fflush(stdout);
-    brk(version + sbuf2.st_size);
-    lseek(inf, 0L, 0);
-    encread(version, (unsigned int) sbuf2.st_size, inf);
+    initscr();                          /* Start up cursor package */
+    keypad(stdscr, 1);
+
+    if (lines > LINES)
+    {
+        endwin();
+        printf("Sorry, original game was played on a screen with %d lines.\n",lines);
+        printf("Current screen only has %d lines. Unable to restore game\n",LINES);
+        return(FALSE);
+    }
+    if (cols > COLS)
+    {
+        endwin();
+        printf("Sorry, original game was played on a screen with %d columns.\n",cols);
+        printf("Current screen only has %d columns. Unable to restore game\n",COLS);
+        return(FALSE);
+    }
+
+    hw = newwin(LINES, COLS, 0, 0);
+    setup();
+
+    rs_restore_file(inf);
     /*
      * we do not close the file so that we will have a hold of the
      * inode for as long as possible
      */
 
-#ifdef WIZARD
-    if (!wizard)
+    if (
+#ifdef MASTER
+	!wizard &&
 #endif
-	if (sbuf2.st_ino != sbuf.st_ino || sbuf2.st_dev != sbuf.st_dev)
-	{
-	    printf("Sorry, saved game is not in the same file.\n");
-	    /* return FALSE; */
-	}
-	else if (sbuf2.st_ctime - sbuf.st_ctime > 15)
-	{
-	    printf("Sorry, file has been touched, so this score won't be recorded\n");
-	    noscore = TRUE;
-	}
+	md_unlink_open_file(file, inf) < 0)
+    {
+	printf("Cannot unlink file\n");
+	return FALSE;
+    }
     mpos = 0;
-    initscr();
-    erase();
-    refresh();
-    mvprintw(0, 0, "%s: %s", file, ctime(&sbuf2.st_mtime));
-
+/*    printw(0, 0, "%s: %s", file, ctime(&sbuf2.st_mtime)); */
+/*
+    printw("%s: %s", file, ctime(&sbuf2.st_mtime));
+*/
+    clearok(stdscr,TRUE);
     /*
      * defeat multiple restarting from the same place
      */
-#ifdef WIZARD
+#ifdef MASTER
     if (!wizard)
 #endif
 	if (sbuf2.st_nlink != 1 || syml)
 	{
-	    printf("Cannot restore from a linked file\n");
+	    endwin();
+	    printf("\nCannot restore from a linked file\n");
 	    return FALSE;
 	}
 
     if (pstats.s_hpt <= 0)
     {
-	printf("\"He's dead, Jim\"\n");
+	endwin();
+	printf("\n\"He's dead, Jim\"\n");
 	return FALSE;
     }
 #ifdef SIGTSTP
@@ -258,70 +291,117 @@ char **envp;
 #endif
 
     environ = envp;
-    gettmode();
-    if ((sp = getenv("TERM")) == NULL)
-	sp = Def_term;
-    setterm(sp);
     strcpy(file_name, file);
-    setup();
-    if (del_obj != NULL)
-    {
-	inpack--;
-	if (del_obj->o_count > 1)
-	    del_obj->o_count--;
-	else
-	    detach(pack, del_obj);
-    }
     clearok(curscr, TRUE);
     srand(getpid());
     msg("file name: %s", file);
     playit();
     /*NOTREACHED*/
+    return(0);
 }
 
 /*
  * encwrite:
  *	Perform an encrypted write
  */
-encwrite(start, size, outf)
-register char *start;
-unsigned int size;
-register FILE *outf;
+
+size_t
+encwrite(char *start, size_t size, FILE *outf)
 {
-    register char *ep;
+    char *e1, *e2, fb;
+    int temp;
+    extern char statlist[];
+    size_t o_size = size;
+    e1 = encstr;
+    e2 = statlist;
+    fb = frob;
 
-    ep = encstr;
-
-    while (size--)
+    while(size)
     {
-	putc(*start++ ^ *ep++, outf);
-	if (*ep == '\0')
-	    ep = encstr;
+	if (putc(*start++ ^ *e1 ^ *e2 ^ fb, outf) == EOF)
+            break;
+
+	temp = *e1++;
+	fb += temp * *e2++;
+	if (*e1 == '\0')
+	    e1 = encstr;
+	if (*e2 == '\0')
+	    e2 = statlist;
+	size--;
     }
+
+    return(o_size - size);
 }
 
 /*
  * encread:
  *	Perform an encrypted read
  */
-encread(start, size, inf)
-register char *start;
-unsigned int size;
-register int inf;
+size_t
+encread(char *start, size_t size, int inf)
 {
-    register char *ep;
-    register int read_size;
+    char *e1, *e2, fb;
+    int temp, read_size;
+    extern char statlist[];
 
-    if ((read_size = read(inf, start, size)) == -1 || read_size == 0)
-	return read_size;
+    fb = frob;
 
-    ep = encstr;
+    if ((read_size = read(inf, start, size)) == 0 || read_size == -1)
+	return(read_size);
+
+    e1 = encstr;
+    e2 = statlist;
 
     while (size--)
     {
-	*start++ ^= *ep++;
-	if (*ep == '\0')
-	    ep = encstr;
+	*start++ ^= *e1 ^ *e2 ^ fb;
+	temp = *e1++;
+	fb += temp * *e2++;
+	if (*e1 == '\0')
+	    e1 = encstr;
+	if (*e2 == '\0')
+	    e2 = statlist;
     }
-    return read_size;
+
+    return(read_size);
+}
+
+static char scoreline[100];
+/*
+ * read_scrore
+ *	Read in the score file
+ */
+rd_score(SCORE *top_ten, int fd)
+{
+    unsigned int i;
+
+    for(i = 0; i < numscores; i++)
+    {
+        encread(top_ten[i].sc_name, MAXSTR, fd);
+        encread(scoreline, 100, fd);
+        sscanf(scoreline, " %u %hu %u %hu %hu %lx \n",
+            &top_ten[i].sc_uid, &top_ten[i].sc_score,
+            &top_ten[i].sc_flags, &top_ten[i].sc_monster,
+            &top_ten[i].sc_level, &top_ten[i].sc_time);
+    }
+}
+
+/*
+ * write_scrore
+ *	Read in the score file
+ */
+wr_score(SCORE *top_ten, FILE *outf)
+{
+    unsigned int i;
+
+    for(i = 0; i < numscores; i++)
+    {
+          memset(scoreline,0,100);
+          encwrite(top_ten[i].sc_name, MAXSTR, outf);
+          sprintf(scoreline, " %u %hu %u %hu %hu %lx \n",
+              top_ten[i].sc_uid, top_ten[i].sc_score,
+              top_ten[i].sc_flags, top_ten[i].sc_monster,
+              top_ten[i].sc_level, top_ten[i].sc_time);
+          encwrite(scoreline,100,outf);
+    }
 }
