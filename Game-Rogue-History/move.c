@@ -1,23 +1,12 @@
+/* DBM	2/12/82	Got rid of bogus arrow bug. */
+
 /*
  * Hero movement commands
  *
  * @(#)move.c	3.26 (Berkeley) 6/15/81
- *
- * BUG FIX!  Mike Hibler @ New Mexico Tech
- *	This fixes the infamous "arrow bug".  The "arrow bug" was one in
- *	which you would repeatedly go into an arrow trap until "an arrow
- *	shoots past you".  When you picked it up and identified it, more 
- *	times then not, you discovered that it was something like:
- *		(+32756, +75643)
- *	which, when wielded, made you pretty indestructable.  It also
- *	gave you big points in a "total win" situation.  The problem was
- *	that the o_hplus and o_dplus fields were never initialized after
- *	the arrow was created.  The solution was, obviously, to initialize
- *	these fields.  The fix itself is in the routine "be_trapped" under
- *	the ARROWTRAP case.
  */
 
-#include <curses.h>
+#include "curses.h"
 #include <ctype.h>
 #include "rogue.h"
 
@@ -287,11 +276,8 @@ register coord *tc;
 		init_weapon(arrow, ARROW);
 		arrow->o_count = 1;
 		arrow->o_pos = hero;
-		/* BUG FIX!  This fixes the infamous "arrow bug". */
-		arrow->o_hplus = arrow->o_dplus = 0;
-		if (rnd(100) < 15)
-		    arrow->o_hplus += rnd(3)+1;
-		/* End of BUG FIX! */
+		arrow->o_hplus = 0;		/* DBM: Get rid of bogus */
+		arrow->o_dplus = 0;		/* DBM: arrows. */
 		fall(item, FALSE);
 	    }
 	when TELTRAP:

@@ -6,8 +6,7 @@
 /*
  * where scorefile should live
  */
-#define SCOREFILE	"/snsr/games/.rogue/rogue_roll"
-#define	NUMTOP		20
+#define SCOREFILE	"/usr/misc/.rogomatic/lib/rogueroll"
 
 /*
  * Variables for checking to make sure the system isn't too loaded

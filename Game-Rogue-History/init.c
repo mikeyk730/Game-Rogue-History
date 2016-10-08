@@ -1,10 +1,18 @@
 /*
+ * DBM	2/12/82	Changed damage done by a floating eye to be non-zero.
+ *		Changed experience point values for Yeti (50 to 35),
+ *		Centaur (15 to 25), Floating Eye (5 to 10), and
+ *		Umber Hulk (130 to 1000).
+ *		Characters always start with 18 or better strength.
+ */
+
+/*
  * global variable initializaton
  *
  * @(#)init.c	3.33 (Berkeley) 6/15/81
  */
 
-#include <curses.h>
+#include "curses.h"
 #include <ctype.h>
 #include "rogue.h"
 
@@ -25,9 +33,10 @@ struct monster monsters[26] = {
 	/* Name		 CARRY	FLAG    str, exp, lvl, amr, hpt, dmg */
 	{ "giant ant",	 0,	ISMEAN,	{ _x, 10,   2,   3, ___, "1d6" } },
 	{ "bat",	 0,	0,	{ _x,  1,   1,   3, ___, "1d2" } },
-	{ "centaur",	 15,	0,	{ _x, 15,   4,   4, ___, "1d6/1d6" } },
+	{ "centaur",	 15,	0,	{ _x, 25,   4,   4, ___, "1d6/1d6" } },
 	{ "dragon",	 100,	ISGREED,{ _x,9000, 10,  -1, ___, "1d8/1d8/3d10" } },
-	{ "floating eye",0,	0,	{ _x,  5,   1,   9, ___, "0d0" } },
+	/* DBM: changed damage for floating eye from 0d0 to 1d1. */
+	{ "floating eye",0,	0,	{ _x, 10,   1,   9, ___, "1d1" } },
 	{ "violet fungi",0,	ISMEAN,	{ _x, 85,   8,   3, ___, "000d0" } },
 	{ "gnome",	 10,	0,	{ _x,  8,   1,   5, ___, "1d6" } },
 	{ "hobgoblin",	 0,	ISMEAN,	{ _x,  3,   1,   5, ___, "1d8" } },
@@ -43,11 +52,11 @@ struct monster monsters[26] = {
 	{ "rust monster",0,	ISMEAN,	{ _x, 25,   5,   2, ___, "0d0/0d0" } },
 	{ "snake",	 0,	ISMEAN,	{ _x,  3,   1,   5, ___, "1d3" } },
 	{ "troll",	 50,	ISREGEN|ISMEAN,{ _x, 55,   6,   4, ___, "1d8/1d8/2d6" } },
-	{ "umber hulk",	 40,	ISMEAN,	{ _x,130,   8,   2, ___, "3d4/3d4/2d5" } },
+	{ "umber hulk",	 40,	ISMEAN,	{ _x,1000,   8,   2, ___, "3d4/3d4/2d5" } },
 	{ "vampire",	 20,	ISREGEN|ISMEAN,{ _x,380,   8,   1, ___, "1d10" } },
 	{ "wraith",	 0,	0,	{ _x, 55,   5,   4, ___, "1d6" } },
 	{ "xorn",	 0,	ISMEAN,	{ _x,120,   7,  -2, ___, "1d3/1d3/1d3/4d6" } },
-	{ "yeti",	 30,	0,	{ _x, 50,   4,   6, ___, "1d6/1d6" } },
+	{ "yeti",	 30,	0,	{ _x, 35,   4,   6, ___, "1d6/1d6" } },
 	{ "zombie",	 0,	ISMEAN,	{ _x,  7,   2,   8, ___, "1d8" } }
 };
 #undef ___
@@ -62,6 +71,7 @@ init_player()
     pstats.s_lvl = 1;
     pstats.s_exp = 0L;
     max_hp = pstats.s_hpt = 12;
+/* DBM: Always generate characters with strength greater than 18.
     if (rnd(100) == 7)
     {
 	pstats.s_str.st_str = 18;
@@ -72,6 +82,9 @@ init_player()
 	pstats.s_str.st_str = 16;
 	pstats.s_str.st_add = 0;
     }
+*/
+    pstats.s_str.st_str =18;
+    pstats.s_str.st_add = rnd(100) + 1;
     pstats.s_dmg = "1d4";
     pstats.s_arm = 10;
     max_stats = pstats;

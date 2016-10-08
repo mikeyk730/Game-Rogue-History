@@ -2,9 +2,14 @@
  * Various input/output functions
  *
  * @(#)io.c	3.10 (Berkeley) 6/15/81
+ *
+ * HISTORY
+ * 08-Mar-87  Michael Mauldin (mlm) at Carnegie-Mellon University
+ *	Added preprocessor variable BSD41.  If defined, unctrl() is
+ *	declared as a function.
  */
 
-#include <curses.h>
+#include "curses.h"
 #include <ctype.h>
 #include "rogue.h"
 
@@ -121,6 +126,7 @@ readchar()
     return c;
 }
 
+# ifdef BSD41
 /*
  * unctrl:
  *	Print a readable version of a certain character
@@ -134,6 +140,7 @@ char ch;
 
     return _unctrl[ch&0177];
 }
+# endif
 
 /*
  * status:

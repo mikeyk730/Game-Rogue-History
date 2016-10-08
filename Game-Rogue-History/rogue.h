@@ -2,6 +2,14 @@
  * Rogue definitions and variable declarations
  *
  * @(#)rogue.h	3.38 (Berkeley) 6/15/81
+ *
+ * HISTORY
+ * 08-Mar-87  Michael Mauldin (mlm) at Carnegie-Mellon University
+ *	Added preprocessor variable BSD41.  If defined, unctrl() is
+ *	defined as a function.  In the new curses.h, unctrl is a macro.
+ *	Also checked for multiple definitions of 'CTRL', since 
+ *	<sys/ttychars.h> gets loaded in 4.2+, and defines it.
+ *
  */
 
 /*
@@ -32,7 +40,8 @@
  && (cp)->y <= (rp)->r_pos.y + ((rp)->r_max.y - 1) && (rp)->r_pos.y <= (cp)->y)
 #define winat(y, x) (mvwinch(mw,y,x)==' '?mvwinch(stdscr,y,x):winch(mw))
 #define debug if (wizard) msg
-#define RN (((seed = seed*11109+13849) & 0x7fff) >> 1)
+/* Aw01 use a real random number renerator */
+#define RN ((rand() & 0x7fff) >> 1)
 #define unc(cp) (cp).y, (cp).x
 #define cmov(xy) move((xy).y, (xy).x)
 #define DISTANCE(y1, x1, y2, x2) ((x2 - x1)*(x2 - x1) + (y2 - y1)*(y2 - y1))
@@ -50,6 +59,9 @@
 #define max(a, b) ((a) > (b) ? (a) : (b))
 #define on(thing, flag) (((thing).t_flags & flag) != 0)
 #define off(thing, flag) (((thing).t_flags & flag) == 0)
+# ifdef CTRL
+#	undef CTRL
+# endif
 #define CTRL(ch) ('ch' & 037)
 #define ALLOC(x) malloc((unsigned int) x)
 #define FREE(x) cfree((char *) x)
@@ -92,9 +104,7 @@
 /*
  * Various constants
  */
-#define	PASSWD	"mTcTtUJ57exqY"
-/* #define PASSWD "mTUPAHIUXEmyQ" */
-/* #define	PASSWD "mTmZcVjBEccKk" */
+#define	PASSWD "mTwA0qqnrlXTw"
 #define BEARTIME 3
 #define SLEEPTIME 5
 #define HEALTIME 30
@@ -475,7 +485,11 @@ coord delta;				/* Change indicated to get_dir() */
 struct linked_list *find_mons(), *find_obj(), *get_item(), *new_item();
 struct linked_list *new_thing(), *wake_monster();
 
-char *malloc(), *getenv(), *unctrl(), *tr_name(), *new(), *sprintf();
+# ifdef BDS41
+char *unctrl();		/* Moved here 3/8/87 by mlm */
+# endif
+
+char *malloc(), *getenv(), *tr_name(), *new(), *sprintf();
 char *vowelstr(), *inv_name(), *strcpy(), *strcat(), *sbrk(), *brk();
 char *ctime(), *num(), *ring_num();
 

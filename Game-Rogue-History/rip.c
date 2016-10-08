@@ -3,19 +3,15 @@
  * Death or a total win
  *
  * @(#)rip.c	3.13 (Berkeley) 6/16/81
- *
- * CHANGE!  Mike Hibler @ New Mexico Tech
- *	Added constant NUMTOP which is the number of top scores to keep.
- *	NUMTOP is defined in mach_dep.h.
  */
 
-#include <curses.h>
+#include "curses.h"
 #include <time.h>
 #include <signal.h>
 #include <ctype.h>
 #include <sys/types.h>
 #include <pwd.h>
-#include "mach_dep.h"
+#include "machdep.h"
 #include "rogue.h"
 
 static char *rip[] = {
@@ -87,7 +83,7 @@ char monst;
 	int sc_level;
 	int sc_uid;
 	char sc_monster;
-    } top_ten[NUMTOP];
+    } top_ten[10];
     register struct sc_ent *scp;
     register int i;
     register struct sc_ent *sc2;
@@ -112,7 +108,7 @@ char monst;
 	return;
     outf = fdopen(fd, "w");
 
-    for (scp = top_ten; scp < &top_ten[NUMTOP]; scp++)
+    for (scp = top_ten; scp < &top_ten[10]; scp++)
     {
 	scp->sc_score = 0;
 	for (i = 0; i < 80; i++)
@@ -141,12 +137,12 @@ char monst;
      */
     if (!waswizard)
     {
-	for (scp = top_ten; scp < &top_ten[NUMTOP]; scp++)
+	for (scp = top_ten; scp < &top_ten[10]; scp++)
 	    if (amount > scp->sc_score)
 		break;
-	if (scp < &top_ten[NUMTOP])
+	if (scp < &top_ten[10])
 	{
-	    for (sc2 = &top_ten[NUMTOP-1]; sc2 > scp; sc2--)
+	    for (sc2 = &top_ten[9]; sc2 > scp; sc2--)
 		*sc2 = *(sc2-1);
 	    scp->sc_score = amount;
 	    strcpy(scp->sc_name, whoami);
@@ -162,8 +158,8 @@ char monst;
     /*
      * Print the list
      */
-    printf("\nTop %d Adventurers:\nRank\tScore\tName\n", NUMTOP);
-    for (scp = top_ten; scp < &top_ten[NUMTOP]; scp++) {
+    printf("\nTop Ten Adventurers:\nRank\tScore\tName\n");
+    for (scp = top_ten; scp < &top_ten[10]; scp++) {
 	if (scp->sc_score) {
 	    printf("%d\t%d\t%s: %s on level %d", scp - top_ten + 1,
 		scp->sc_score, scp->sc_name, reason[scp->sc_flags],
@@ -192,14 +188,14 @@ char monst;
 		gets(prbuf);
 		if (prbuf[0] == 'd')
 		{
-		    for (sc2 = scp; sc2 < &top_ten[NUMTOP-1]; sc2++)
+		    for (sc2 = scp; sc2 < &top_ten[9]; sc2++)
 			*sc2 = *(sc2 + 1);
-		    top_ten[NUMTOP-1].sc_score = 0;
+		    top_ten[9].sc_score = 0;
 		    for (i = 0; i < 80; i++)
-			top_ten[NUMTOP-1].sc_name[i] = rnd(255);
-		    top_ten[NUMTOP-1].sc_flags = RN;
-		    top_ten[NUMTOP-1].sc_level = RN;
-		    top_ten[NUMTOP-1].sc_monster = RN;
+			top_ten[9].sc_name[i] = rnd(255);
+		    top_ten[9].sc_flags = RN;
+		    top_ten[9].sc_level = RN;
+		    top_ten[9].sc_monster = RN;
 		    scp--;
 		}
 	    }

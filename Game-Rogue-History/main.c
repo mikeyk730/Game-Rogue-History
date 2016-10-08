@@ -7,10 +7,10 @@
  * @(#)main.c	3.27 (Berkeley) 6/15/81
  */
 
-#include <curses.h>
+#include "curses.h"
 #include <signal.h>
 #include <pwd.h>
-#include "mach_dep.h"
+#include "machdep.h"
 #include "rogue.h"
 
 #ifdef CHECKTIME
@@ -62,7 +62,7 @@ char **envp;
     strcat(home, "/");
 
     strcpy(file_name, home);
-    strcat(file_name, "rogue.save");
+    strcat(file_name, "rogue.sav");
 
     if ((env = getenv("ROGUEOPTS")) != NULL)
 	parse_opts(env);
@@ -100,6 +100,7 @@ char **envp;
 	printf("Hello %s, just a moment while I dig the dungeon...", whoami);
     fflush(stdout);
     seed = dnum;
+    srand(seed);			/* Aw01 Use a real random number generator */
 
     init_player();			/* Roll up the rogue */
     init_things();			/* Set up probabilities of things */
@@ -218,7 +219,7 @@ char *s;
 rnd(range)
 register int range;
 {
-    return range == 0 ? 0 : abs(RN) % range;
+    return range == 0 ? 0 : rand() % range;	/* Aw01 Use a real rand */
 }
 
 /*

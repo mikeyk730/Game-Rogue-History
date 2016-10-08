@@ -5,7 +5,7 @@
  * @(#)daemon.c	3.3 (Berkeley) 6/15/81
  */
 
-#include <curses.h>
+#include "curses.h"
 #include "rogue.h"
 
 #define EMPTY 0
@@ -139,9 +139,10 @@ int (*func)(), arg, time, type;
  */
 
 lengthen(func, xtime)
-int (*func)(), xtime;
+int (*func)();
+int xtime;
 {
-     register struct delayed_action *wire;
+    register struct delayed_action *wire;
 
     if ((wire = find_slot(func)) == NULL)
 	return;

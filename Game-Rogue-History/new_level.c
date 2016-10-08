@@ -1,4 +1,5 @@
-#include <curses.h>
+/* 11-23-81 Aw01 Try different rooms when trying to find some FLOOR */
+#include "curses.h"
 #include "rogue.h"
 
 /*
@@ -131,8 +132,8 @@ put_things()
 	    /*
 	     * Put it somewhere
 	     */
-	    rm = rnd_room();
 	    do {
+	        rm = rnd_room();		/* Aw01 Try differnt rooms */
 		rnd_pos(&rooms[rm], &tp);
 	    } until (winat(tp.y, tp.x) == FLOOR);
 	    mvaddch(tp.y, tp.x, cur->o_type);
@@ -154,8 +155,8 @@ put_things()
 	/*
 	 * Put it somewhere
 	 */
-	rm = rnd_room();
 	do {
+	    rm = rnd_room();		/* Aw01 Try different rooms */
 	    rnd_pos(&rooms[rm], &tp);
 	} until (winat(tp.y, tp.x) == FLOOR);
 	mvaddch(tp.y, tp.x, cur->o_type);

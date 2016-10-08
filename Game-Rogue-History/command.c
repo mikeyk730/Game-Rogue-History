@@ -2,6 +2,11 @@
  * Read and execute the user commands
  *
  * @(#)command.c	3.45 (Berkeley) 6/15/81
+ *
+ * HISTORY
+ * 08-Mar-87  Michael Mauldin (mlm) at Carnegie-Mellon University
+ *	Added preprocessor variable BSD41.  If defined, unctrl() is
+ *	declared as a function.
  */
 
 #include <curses.h>
@@ -19,7 +24,9 @@ command()
     register char ch;
     register int ntimes = 1;			/* Number of player moves */
     static char countch, direction, newcount = FALSE;
+# ifdef BSD41
     char *unctrl();
+# endif
 
     if (on(player, ISHASTE)) ntimes++;
     /*
@@ -194,7 +201,6 @@ command()
 			if (wizard = passwd())
 			{
 			    msg("You are suddenly as smart as Ken Arnold in dungeon #%d", dnum);
- 			    wizard = TRUE;
 			    waswizard = TRUE;
 			}
 			else

@@ -6,7 +6,7 @@
  * @(#)wizard.c	3.8 (Berkeley) 6/3/81
  */
 
-#include <curses.h>
+#include "curses.h"
 #include <ctype.h>
 #include "rogue.h"
 
@@ -185,5 +185,5 @@ passwd()
     if (sp == buf)
 	return FALSE;
     *sp = '\0';
-    return (strcmp(PASSWD, crypt(buf, "mT")) == 0);
+    return (!strcmp(PASSWD, crypt(buf, "mT")) != 0);
 }
