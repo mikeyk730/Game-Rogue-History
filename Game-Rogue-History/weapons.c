@@ -1,13 +1,7 @@
 /*
  * Functions for dealing with problems brought about by weapons
  *
- * @(#)weapons.c	4.14 (Berkeley) 4/6/82
- *
- * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
- * All rights reserved.
- *
- * See the file LICENSE.TXT for full copyright and licensing information.
+ * @(#)weapons.c	4.15 (NMT from Berkeley 5.2) 8/25/83
  */
 
 #include <curses.h>
@@ -151,11 +145,7 @@ register bool pr;
     }
     discard(obj);
     if (pr)
-		msg("the %s vanishes as it hits the ground", 
-			/* BUGFIX: Identification trick */
-			(obj->o_type==WEAPON) ? w_names[obj->o_which] : inv_name(obj,TRUE));
-
-	discard(obj);
+	msg("the %s vanishes as it hits the ground", w_names[obj->o_which]);
 }
 
 /*
@@ -169,8 +159,8 @@ char type;
     register struct init_weps *iwp;
 
     iwp = &init_dam[type];
-    strncpy(weap->o_damage, iwp->iw_dam, 8);
-    strncpy(weap->o_hurldmg, iwp->iw_hrl, 8);
+    weap->o_damage = iwp->iw_dam;
+    weap->o_hurldmg = iwp->iw_hrl;
     weap->o_launch = iwp->iw_launch;
     weap->o_flags = iwp->iw_flags;
     if (weap->o_flags & ISMANY)

@@ -1,13 +1,7 @@
 /*
  * Code for one creature to chase another
  *
- * @(#)chase.c	4.25 (Berkeley) 5/5/82
- *
- * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
- * All rights reserved.
- *
- * See the file LICENSE.TXT for full copyright and licensing information.
+ * @(#)chase.c	4.30 (NMT from Berkeley 5.2) 8/25/83
  */
 
 #include <curses.h>
@@ -24,19 +18,15 @@ coord ch_ret;				/* Where chasing takes you */
 runners()
 {
     register THING *tp;
-	register THING *ntp;
 
-    for (tp = mlist; tp != NULL; tp = ntp)
+    for (tp = mlist; tp != NULL; tp = next(tp))
     {
-	ntp = next(tp);
 	if (!on(*tp, ISHELD) && on(*tp, ISRUN))
 	{
 	    if (!on(*tp, ISSLOW) || tp->t_turn)
-		if (do_chase(tp) == -1)
-			continue;
+		do_chase(tp);
 	    if (on(*tp, ISHASTE))
-		if (do_chase(tp) == -1)
-			continue;
+		do_chase(tp);
 	    tp->t_turn ^= TRUE;
 	}
     }
@@ -124,7 +114,8 @@ over:
     {
 	if (ce(this, hero))
 	{
-	    return ( attack(th) );
+	    attack(th);
+	    return;
 	}
 	else if (ce(this, *th->t_dest))
 	{
@@ -143,7 +134,7 @@ over:
 	}
     }
     else if (th->t_type == 'F')
-	return(0);
+	return;
     mvaddch(th->t_pos.y, th->t_pos.x, th->t_oldch);
     if (!ce(ch_ret, th->t_pos))
     {
@@ -176,7 +167,6 @@ over:
      */
     if (stoprun && ce(th->t_pos, *(th->t_dest)))
 	th->t_flags &= ~ISRUN;
-	return(0);
 }
 
 /*
@@ -199,12 +189,10 @@ register THING *mp;
 
 /*
  * runto:
- *	Set a mosnter running after something or stop it from running
- *	(for when it dies)
+ *	Set a monster running after the hero.
  */
-runto(runner, spot)
+runto(runner)
 register coord *runner;
-coord *spot;
 {
     register THING *tp;
 
@@ -337,15 +325,23 @@ register coord *cp;
     register struct room *rp;
     register char *fp;
 
-    for (rp = rooms; rp < &rooms[MAXROOMS]; rp++)
-	if (cp->x < rp->r_pos.x + rp->r_max.x && rp->r_pos.x <= cp->x
-	 && cp->y < rp->r_pos.y + rp->r_max.y && rp->r_pos.y <= cp->y)
-	    return rp;
+
     fp = &flat(cp->y, cp->x);
     if (*fp & F_PASS)
 	return &passages[*fp & F_PNUM];
+
+    for (rp = rooms; rp < &rooms[MAXROOMS]; rp++)
+	if (cp->x <= rp->r_pos.x + rp->r_max.x && rp->r_pos.x <= cp->x
+	 && cp->y <= rp->r_pos.y + rp->r_max.y && rp->r_pos.y <= cp->y)
+	    return rp;
+
     msg("in some bizarre place (%d, %d)", unc(*cp));
+#ifdef WIZARD
+    abort();
+    /* NOTREACHED */
+#else
     return NULL;
+#endif
 }
 
 /*

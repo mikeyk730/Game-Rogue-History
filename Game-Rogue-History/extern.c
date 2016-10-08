@@ -1,13 +1,7 @@
 /*
  * global variable initializaton
  *
- * @(#)extern.c	4.32 (Berkeley) 4/1/82
- *
- * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
- * All rights reserved.
- *
- * See the file LICENSE.TXT for full copyright and licensing information.
+ * @(#)extern.c	4.38 (NMT from Berkeley 5.2) 8/25/83
  */
 
 #include <curses.h>
@@ -30,7 +24,6 @@ bool passgo = FALSE;			/* Follow passages */
 bool playing = TRUE;			/* True until he quits */
 bool running = FALSE;			/* True if player is running */
 bool save_msg = TRUE;			/* Remember last msg */
-bool slow_invent = FALSE;		/* Inventory one line at a time */
 bool terse = FALSE;			/* True if we should be short */
 #ifdef WIZARD
 bool wizard = FALSE;			/* True if allows wizard commands */
@@ -38,12 +31,11 @@ bool wizard = FALSE;			/* True if allows wizard commands */
 
 char take;				/* Thing the rogue is taking */
 char prbuf[MAXSTR];			/* Buffer for sprintfs */
-char outbuf[BUFSIZ];			/* Output buffer for stdout */
 char runch;				/* Direction player is running */
 char *s_names[MAXSCROLLS];		/* Names of the scrolls */
-const char *p_colors[MAXPOTIONS];		/* Colors of the potions */
-const char *r_stones[MAXRINGS];		/* Stone settings of the rings */
-const char *w_names[MAXWEAPONS + 1] = {	/* Names of the various weapons */
+char *p_colors[MAXPOTIONS];		/* Colors of the potions */
+char *r_stones[MAXRINGS];		/* Stone settings of the rings */
+char *w_names[MAXWEAPONS + 1] = {	/* Names of the various weapons */
     "mace",
     "long sword",
     "short bow",
@@ -56,7 +48,7 @@ const char *w_names[MAXWEAPONS + 1] = {	/* Names of the various weapons */
     "spear",
     NULL				/* fake entry for dragon's breath */
 };
-const char *a_names[MAXARMORS] = {		/* Names of armor types */
+char *a_names[MAXARMORS] = {		/* Names of armor types */
     "leather armor",
     "ring mail",
     "studded leather armor",
@@ -66,7 +58,7 @@ const char *a_names[MAXARMORS] = {		/* Names of armor types */
     "banded mail",
     "plate mail",
 };
-const char *ws_made[MAXSTICKS];		/* What sticks are made of */
+char *ws_made[MAXSTICKS];		/* What sticks are made of */
 char *release;				/* Release number of rogue */
 char whoami[MAXSTR];			/* Name of player */
 char fruit[MAXSTR];			/* Favorite fruit */
@@ -80,6 +72,11 @@ char file_name[MAXSTR];			/* Save file name */
 char home[MAXSTR];			/* User's home directory */
 char _level[MAXLINES*MAXCOLS];		/* Level map */
 char _flags[MAXLINES*MAXCOLS];		/* Flags for each space on the map */
+char *inv_t_name[] = {
+	"Overwrite",
+	"Slow",
+	"Clear"
+};
 
 int max_level;				/* Deepest player has gone */
 int ntraps;				/* Number of traps on this level */
@@ -100,6 +97,8 @@ int food_left;				/* Amount of food in hero's stomach */
 int group = 2;				/* Current group number */
 int hungry_state = 0;			/* How hungry is he */
 int fd;					/* File descriptor for score file */
+int inv_type = 0;			/* Type of inventory to use */
+int seenstairs;				/* Have seen the stairs (for lsd) */
 int a_chances[MAXARMORS] = {		/* Chance for each armor type */
     20,
     35,
@@ -125,6 +124,7 @@ long seed;				/* Random number seed */
 
 coord oldpos;				/* Position before last look() call */
 coord delta;				/* Change indicated to get_dir() */
+coord stairs;				/* Location of staircase */
 
 THING player;				/* The rogue */
 THING *cur_armor;			/* What a well dresssed rogue wears */
@@ -133,6 +133,8 @@ THING *cur_ring[2];			/* Which rings are being worn */
 THING *lvl_obj = NULL;			/* List of objects on this level */
 THING *mlist = NULL;			/* List of monsters on the level */
 THING *_monst[MAXLINES*MAXCOLS];	/* Pointers for monsters at each spot */
+THING *del_obj;				/* Object that should be deleted on */
+					/* restart of game */
 
 WINDOW *hw;				/* Used as a scratch window */
 
@@ -225,16 +227,16 @@ struct magic_item s_magic[MAXSCROLLS] = {
 
 struct magic_item p_magic[MAXPOTIONS] = {
     { "confusion",		 8,   5 },
-    { "paralysis",		10,   5 },
+    { "hallucination",		 8,   5 },
     { "poison",			 8,   5 },
     { "gain strength",		15, 150 },
-    { "see invisible",		 2, 100 },
+    { "see invisible",		 3, 100 },
     { "healing",		15, 130 },
     { "monster detection",	 6, 130 },
     { "magic detection",	 6, 105 },
     { "raise level",		 2, 250 },
     { "extra healing",		 5, 200 },
-    { "haste self",		 4, 190 },
+    { "haste self",		 5, 190 },
     { "restore strength",	14, 130 },
     { "blindness",		 4,   5 },
     { "thirst quenching",	 1,   5 },
@@ -259,18 +261,18 @@ struct magic_item r_magic[MAXRINGS] = {
 
 struct magic_item ws_magic[MAXSTICKS] = {
     { "light",			12, 250 },
-    { "striking",		 9,  75 },
+    { "invisibility",		 6,   5 },
     { "lightning",		 3, 330 },
     { "fire",			 3, 330 },
     { "cold",			 3, 330 },
     { "polymorph",		15, 310 },
     { "magic missile",		10, 170 },
-    { "haste monster",		 9,   5 },
+    { "haste monster",		10,   5 },
     { "slow monster",		11, 350 },
     { "drain life",		 9, 300 },
     { "nothing",		 1,   5 },
-    { "teleport away",		 5, 340 },
-    { "teleport to",		 5,  50 },
+    { "teleport away",		 6, 340 },
+    { "teleport to",		 6,  50 },
     { "cancellation",		 5, 280 },
 };
 
@@ -315,8 +317,8 @@ struct h_list helpstr[] = {
     'c',	"	call object",
     'D',	"	recall what's been discovered",
     'o',	"	examine/set options",
-    CTRL('L'),	"	redraw screen",
-    CTRL('R'),	"	repeat last message",
+    CTRL(L),	"	redraw screen",
+    CTRL(R),	"	repeat last message",
     ESCAPE,	"	cancel command",
     '!',	"	shell escape",
     'S',	"	save game",

@@ -1,13 +1,7 @@
 /*
  * Various installation dependent routines
  *
- * @(#)mach_dep.c	4.23 (Berkeley) 5/19/82
- *
- * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
- * All rights reserved.
- *
- * See the file LICENSE.TXT for full copyright and licensing information.
+ * @(#)mach_dep.c	4.27 (NMT from Berkeley 5.2) 8/25/83
  */
 
 /*
@@ -16,34 +10,31 @@
  *	SCOREFILE	Where/if the score file should live.
  *	MAXLOAD		What (if any) the maximum load average should be
  *			when people are playing.  If defined, then
- *	LOADAV		Should rogue define it's own routine to
- *			get the load average?
- *	NAMELIST	If so, where does the system namelist hide?
+ *		LOADAV		Should rogue define it's own routine to
+ *				get the load average?
+ *		NAMELIST	If so, where does the system namelist hide?
  *	MAXUSERS	What (if any) the maximum user count should be
  *			when people are playing.  If defined, then
- *	UCOUNT		Should rogue define it's own routine to
- *			count users?
- *	UTMP		If so, where does the user list hide?
+ *		UCOUNT		Should rogue define it's own routine to
+ *				count users?
+ *		UTMP		If so, where does the user list hide?
  *	CHECKTIME	How often/if rogue should check during the game
  *			for high load average.
  */
 
-#include <limits.h>
 #include <curses.h>
-#include "rogue.h"
+#include "extern.h"
 #include <signal.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <fcntl.h>
 
 #ifdef SCOREFILE
-static char lockfile[PATH_MAX]  = "rogue52.lck";
-static char scorefile[PATH_MAX] = "rogue52.scr";
+static char *lockfile = "/tmp/.roguelock";
 #endif
 
 #ifdef CHECKTIME
 static int num_checks;		/* times we've gone over in checkout() */
-#endif 
+#endif
 
 /*
  * init_check:
@@ -65,57 +56,6 @@ init_check()
 #endif
 }
 
-int
-directory_exists(char *dirname)
-{
-    struct stat sb;
-
-    if (stat(dirname, &sb) == 0) /* path exists */
-        return (S_ISDIR (sb.st_mode));
-
-    return(0);
-}
-
-
-char *
-roguehome()
-{
-    static char path[1024];
-    char *end,*home;
-
-    if ( (home = getenv("ROGUEHOME")) != NULL)
-    {
-        if (*home)
-        {
-            strncpy(path, home, PATH_MAX - 20);
-
-            end = &path[strlen(path)-1];
-
-
-            while( (end >= path) && ((*end == '/') || (*end == '\\')))
-                *end-- = '\0';
-        
-            if (directory_exists(path))
-                return(path);
-        }
-    }
-
-
-    if (directory_exists("/var/games/roguelike"))
-        return("/var/games/roguelike");
-    if (directory_exists("/var/lib/roguelike"))
-        return("/var/lib/roguelike");
-    if (directory_exists("/var/roguelike"))
-        return("/var/roguelike");
-    if (directory_exists("/usr/games/lib"))
-        return("/usr/games/lib");
-    if (directory_exists("/games/roguelik"))
-        return("/games/roguelik");
-
-    return(NULL);
-}
-
-
 /*
  * open_score:
  *	Open up the score file for future use, and then
@@ -123,25 +63,11 @@ roguehome()
  */
 open_score()
 {
-    char *homedir = roguehome();
-
-    if (homedir == NULL)
-        homedir = "";
-
-    strcpy(scorefile, homedir);
-    if (*scorefile)
-	strcat(scorefile,"/");
-    strcat(scorefile, "rogue52.scr");
-    strcpy(lockfile, homedir);
-    if (*lockfile)
-        strcat(lockfile,"/");
-    strcat(lockfile, "rogue52.lck");
 #ifdef SCOREFILE
-    fd = open(scorefile, O_RDWR | O_CREAT, 0666 );
+    fd = open(SCOREFILE, 2);
 #else
     fd = -1;
 #endif
-   
     setuid(getuid());
     setgid(getgid());
 }
@@ -152,7 +78,7 @@ open_score()
  */
 setup()
 {
-    void  auto_save(), quit(), endit(), tstp();
+    int  auto_save(), quit(), endit(), tstp();
 #ifdef CHECKTIME
     int  checkout();
 #endif
@@ -170,20 +96,12 @@ setup()
 #ifndef DUMP
     signal(SIGILL, auto_save);
     signal(SIGTRAP, auto_save);
-#ifdef SIGIOT
     signal(SIGIOT, auto_save);
-#endif
-#ifdef SIGEMT
     signal(SIGEMT, auto_save);
-#endif
     signal(SIGFPE, auto_save);
-#ifdef SIGBUS
     signal(SIGBUS, auto_save);
-#endif
     signal(SIGSEGV, auto_save);
-#ifdef SIGSYS
     signal(SIGSYS, auto_save);
-#endif
     signal(SIGTERM, auto_save);
 #endif
 
@@ -212,10 +130,10 @@ start_score()
 }
 
 /*
- * issymlink:
+ * symlink:
  *	See if the file has a symbolic link
  */
-issymlink(sp)
+symlink(sp)
 char *sp;
 {
 #ifdef S_IFLNK
@@ -294,7 +212,7 @@ checkout()
 	    chmsg("The load is rather high, O exaulted one");
 	}
 	else if (num_checks++ == 3)
-	    fatal("Sorry.  You took to long.  You are dead\n");
+	    fatal("Sorry.  You took too long.  You are dead\n");
 	checktime = (CHECKTIME * 60) / num_checks;
 	alarm(checktime);
 	chmsg(msgs[num_checks - 1], ((double) checktime / 60.0));
@@ -355,11 +273,13 @@ register double *avg;
     {
 bad:
 	avg[0] = avg[1] = avg[2] = 0.0;
+	close(kmem);
 	return;
     }
 
     lseek(kmem, (long) avenrun.n_value, 0);
     read(kmem, (char *) avg, 3 * sizeof (double));
+	close(kmem);
 }
 #endif
 
@@ -405,12 +325,13 @@ lock_sc()
     time_t time();
 
 over:
-    if (creat(lockfile, 0000) > 0)
+    close(8);	/* just in case there are no files left */
+    if (creat(lockfile, 0000) >= 0)
 	return TRUE;
     for (cnt = 0; cnt < 5; cnt++)
     {
 	sleep(1);
-	if (creat(lockfile, 0000) > 0)
+	if (creat(lockfile, 0000) >= 0)
 	    return TRUE;
     }
     if (stat(lockfile, &sbuf) < 0)
@@ -433,7 +354,7 @@ over:
 	if (prbuf[0] == 'y')
 	    for (;;)
 	    {
-		if (creat(lockfile, 0000) > 0)
+		if (creat(lockfile, 0000) >= 0)
 		    return TRUE;
 		if (stat(lockfile, &sbuf) < 0)
 		{
@@ -470,5 +391,16 @@ unlock_sc()
  */
 flush_type()
 {
-    flushinp();
+    register int flag;
+
+#ifndef	attron
+    flag = _tty.sg_flags;
+    _tty.sg_flags |= RAW;
+    stty(_tty_ch, &_tty);
+    _tty.sg_flags = flag;
+    stty(_tty_ch, &_tty);
+#else	attron
+    noraw();
+    raw();
+#endif	attron
 }

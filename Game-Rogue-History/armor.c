@@ -1,12 +1,6 @@
 /*
  * This file contains misc functions for dealing with armor
- * @(#)armor.c	4.8 (Berkeley) 4/6/82
- *
- * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
- * All rights reserved.
- *
- * See the file LICENSE.TXT for full copyright and licensing information.
+ * @(#)armor.c	4.9 (NMT from Berkeley 5.2) 8/25/83
  */
 
 #include <curses.h>

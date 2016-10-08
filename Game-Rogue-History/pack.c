@@ -1,18 +1,12 @@
-/*
- * Routines to deal with the pack
- *
- * @(#)pack.c	4.15 (Berkeley) 4/6/82
- *
- * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
- * All rights reserved.
- *
- * See the file LICENSE.TXT for full copyright and licensing information.
- */
-
 #include <curses.h>
 #include <ctype.h>
 #include "rogue.h"
+
+/*
+ * Routines to deal with the pack
+ *
+ * @(#)pack.c	4.16 (NMT from Berkeley 5.2) 8/25/83
+ */
 
 /*
  * add_pack:
@@ -45,9 +39,7 @@ bool silent;
      * to see if there is something in thr same group and if there is then
      * increment the count.
      */
-/*    floor = (proom->r_flags & ISGONE) ? PASSAGE : FLOOR; */
-    if (proom) floor = (proom->r_flags & ISGONE) ? PASSAGE : FLOOR;
-    else floor = FLOOR;
+    floor = (proom->r_flags & ISGONE) ? PASSAGE : FLOOR;
     if (obj->o_group)
     {
 	for (op = pack; op != NULL; op = next(op))
@@ -250,7 +242,7 @@ char ch;
 	    break;
 	default:
 #ifdef WIZARD
-	    debug("Where did you pick a '%s' up???", unctrol(ch));
+	    debug("Where did you pick a '%s' up???", unctrl(ch));
 #endif
 	case ARMOR:
 	case POTION:
@@ -294,7 +286,7 @@ picky_inven()
 		return;
 	    }
 	if (!terse)
-	    msg("'%s' not in pack", unctrol(mch));
+	    msg("'%s' not in pack", unctrl(mch));
 	msg("range is 'a' to '%c'", --ch);
     }
 }
@@ -328,7 +320,7 @@ int type;
 	    /*
 	     * Give the poor player a chance to abort the command
 	     */
-	    if (ch == ESCAPE || ch == CTRL('G'))
+	    if (ch == ESCAPE || ch == CTRL(G))
 	    {
 		after = FALSE;
 		msg("");

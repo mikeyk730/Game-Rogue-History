@@ -3,21 +3,12 @@
  * this command were not necessary, but it is the only way to keep the
  * wolves off of my back.
  *
- * @(#)options.c	4.12 (Berkeley) 3/2/82
- *
- * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
- * All rights reserved.
- *
- * See the file LICENSE.TXT for full copyright and licensing information.
+ * @(#)options.c	4.15 (NMT from Berkeley 5.2) 8/25/83
  */
 
 #include <curses.h>
-#include <termios.h>
 #include <ctype.h>
 #include "rogue.h"
-
-extern struct termios terminal;
 
 #define	EQSTR(a, b, c)	(strncmp(a, b, c) == 0)
 
@@ -36,7 +27,10 @@ struct optstruct {
 
 typedef struct optstruct	OPTION;
 
-int	put_bool(), get_bool(), put_str(), get_str();
+char	*inv_t_name[];
+
+int	put_bool(), get_bool(), put_str(), put_inv_t(), get_inv_t(),
+	get_str();
 
 OPTION	optlist[] = {
     {"terse",	 "Terse output: ",
@@ -45,12 +39,12 @@ OPTION	optlist[] = {
 		(int *) &fight_flush,	put_bool,	get_bool	},
     {"jump",	 "Show position only at end of run: ",
 		(int *) &jump,		put_bool,	get_bool	},
-    {"step",	"Do inventories one line at a time: ",
-		(int *) &slow_invent,	put_bool,	get_bool	},
     {"askme",	"Ask me about unidentified things: ",
 		(int *) &askme,		put_bool,	get_bool	},
     {"passgo",	"Follow turnings in passageways: ",
 		(int *) &passgo,	put_bool,	get_bool	},
+    {"inven",	"Inventory style: ",
+		(int *) &inv_type,	put_inv_t,	get_inv_t	},
     {"name",	 "Name: ",
 		(int *) whoami,		put_str,	get_str		},
     {"fruit",	 "Fruit: ",
@@ -106,7 +100,9 @@ option()
     wrefresh(hw);
     wait_for(' ');
     clearok(curscr, TRUE);
+#ifdef attron
     touchwin(stdscr);
+#endif
     after = FALSE;
 }
 
@@ -128,6 +124,16 @@ put_str(str)
 char *str;
 {
     waddstr(hw, str);
+}
+
+/*
+ * put_inv_t:
+ *	Put out an inventory type
+ */
+put_inv_t(i)
+int *i;
+{
+	waddstr(hw, inv_t_name[*i]);
 }
 
 /*
@@ -203,19 +209,29 @@ WINDOW *win;
     {
 	if (c == -1)
 	    continue;
-	else if (c == terminal.c_cc[VERASE])	/* process erase character */
+#ifndef	attron
+/*HMS:	else if (c == _tty.sg_erase)	/* process erase character */
+	else if (c == _tty.c_cc[VERASE])	/* process erase character */
+#else	attron
+	else if (c == erasechar())	/* process erase character */
+#endif	attron
 	{
 	    if (sp > buf)
 	    {
 		register int i;
 
 		sp--;
-		for (i = strlen(unctrol(*sp)); i; i--)
+		for (i = strlen(unctrl(*sp)); i; i--)
 		    waddch(win, '\b');
 	    }
 	    continue;
 	}
-	else if (c == terminal.c_cc[VKILL])     /* process kill character */
+#ifndef	attron
+/*HMS:	else if (c == _tty.sg_kill)	/* process kill character */
+	else if (c == _tty.c_cc[VKILL])	/* process kill character */
+#else	attron
+	else if (c == killchar())	/* process kill character */
+#endif	attron
 	{
 	    sp = buf;
 	    wmove(win, oy, ox);
@@ -234,11 +250,11 @@ WINDOW *win;
 	    }
 	}
 	if (sp >= &buf[MAXINP] || !(isprint(c) || c == ' '))
-	    putchar(CTRL('G'));
+	    putchar(CTRL(G));
 	else
 	{
 	    *sp++ = c;
-	    waddstr(win, unctrol(c));
+	    waddstr(win, unctrl(c));
 	}
     }
     *sp = '\0';
@@ -257,6 +273,61 @@ WINDOW *win;
     else
 	return NORM;
 }
+
+/*
+ * get_inv_t
+ *	Get an inventory type name
+ */
+get_inv_t(ip, win)
+int	*ip;
+WINDOW	*win;
+{
+    register int oy, ox;
+    register bool op_bad;
+
+    op_bad = TRUE;
+    getyx(win, oy, ox);
+    waddstr(win, inv_t_name[*ip]);
+    while (op_bad)	
+    {
+	wmove(win, oy, ox);
+	wrefresh(win);
+	switch (readchar())
+	{
+	    case 'o':
+	    case 'O':
+		*ip = INV_OVER;
+		op_bad = FALSE;
+		break;
+	    case 's':
+	    case 'S':
+		*ip = INV_SLOW;
+		op_bad = FALSE;
+		break;
+	    case 'c':
+	    case 'C':
+		*ip = INV_CLEAR;
+		op_bad = FALSE;
+		break;
+	    case '\n':
+	    case '\r':
+		op_bad = FALSE;
+		break;
+	    case '\033':
+	    case '\007':
+		return QUIT;
+	    case '-':
+		return MINUS;
+	    default:
+		mvwaddstr(win, oy, ox + 15, "(O, S, or C)");
+	}
+    }
+    wmove(win, oy, ox);
+    waddstr(win, inv_t_name[*ip]);
+    waddch(win, '\n');
+    return NORM;
+}
+	
 
 #ifdef WIZARD
 /*
@@ -290,6 +361,7 @@ register char *str;
     register char *sp;
     register OPTION *op;
     register int len;
+    register char **i;
 
     while (*str)
     {
@@ -329,7 +401,22 @@ register char *str;
 		     */
 		    for (sp = str + 1; *sp && *sp != ','; sp++)
 			continue;
-		    strucpy(start, str, sp - str);
+		    /*
+		     * check for type of inventory
+		     */
+		    if (op->o_putfunc == put_inv_t)
+		    {
+			if (islower(*str))
+			    *str = toupper(*str);
+			for (i = inv_t_name; i <= &inv_t_name[INV_CLEAR]; i++)
+			    if (strncmp(str, *i, sp - str) == 0)
+			    {
+				inv_type = i - inv_t_name;
+				break;
+			    }
+		    }
+		    else
+			strucpy(start, str, sp - str);
 		}
 		break;
 	    }
@@ -354,7 +441,7 @@ register char *str;
 
 /*
  * strucpy:
- *	Copy string using unctrol for things
+ *	Copy string using unctrl for things
  */
 strucpy(s1, s2, len)
 register char *s1, *s2;

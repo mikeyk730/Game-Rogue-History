@@ -1,16 +1,9 @@
 /*
  * Functions for dealing with linked lists of goodies
  *
- * @(#)list.c	4.7 (Berkeley) 12/19/81
- *
- * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
- * All rights reserved.
- *
- * See the file LICENSE.TXT for full copyright and licensing information.
+ * @(#)list.c	4.8 (NMT from Berkeley 5.2) 8/25/83
  */
 
-#include <stdlib.h>
 #include <curses.h>
 #include "rogue.h"
 
@@ -75,7 +68,7 @@ discard(item)
 register THING *item;
 {
     total--;
-    free((char *) item);
+    cfree((char *) item);
 }
 
 /*
@@ -86,6 +79,7 @@ THING *
 new_item()
 {
     register THING *item;
+    THING *calloc();
 
     if ((item = calloc(1, sizeof *item)) == NULL)
 	msg("ran out of memory after %d items", total);

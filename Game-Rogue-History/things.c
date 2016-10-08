@@ -2,20 +2,15 @@
  * Contains functions for dealing with things like potions, scrolls,
  * and other items.
  *
- * @(#)things.c	4.26 (Berkeley) 5/18/82
- *
- * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
- * All rights reserved.
- *
- * See the file LICENSE.TXT for full copyright and licensing information.
+ * @(#)things.c	4.29 (NMT from Berkeley 5.2) 8/25/83
  */
 
 #include <curses.h>
+#ifdef	attron
+#include <term.h>
+#endif	attron
 #include <ctype.h>
 #include "rogue.h"
-
-bool got_genocide = FALSE;
 
 /*
  * inv_name:
@@ -32,7 +27,7 @@ register bool drop;
     pb = prbuf;
     switch (obj->o_type)
     {
-	case SCROLL:
+	when SCROLL:
 	    if (obj->o_count == 1)
 	    {
 		strcpy(pb, "A scroll ");
@@ -135,12 +130,10 @@ register bool drop;
 	    else
 		sprintf(pb, "A%s %s ring", vowelstr(r_stones[obj->o_which]),
 		    r_stones[obj->o_which]);
-	when GOLD:
-		sprintf(pb, "%d pieces of gold", obj->o_goldval);
 #ifdef WIZARD
 	otherwise:
-	    debug("Picked up something funny %s", unctrol(obj->o_type));
-	    sprintf(pb, "Something bizarre %s", unctrol(obj->o_type));
+	    debug("Picked up something funny %s", unctrl(obj->o_type));
+	    sprintf(pb, "Something bizarre %s", unctrl(obj->o_type));
 #endif
     }
     if (obj == cur_armor)
@@ -256,11 +249,11 @@ new_thing()
 {
     register THING *cur;
     register int j, k;
+    static bool got_genocide = FALSE;
 
     cur = new_item();
     cur->o_hplus = cur->o_dplus = 0;
-    strcpy(cur->o_damage,"0d0");
-    strcpy(cur->o_hurldmg,"0d0");
+    cur->o_damage = cur->o_hurldmg = "0d0";
     cur->o_ac = 11;
     cur->o_count = 1;
     cur->o_group = 0;
@@ -271,7 +264,7 @@ new_thing()
      */
     switch (no_food > 3 ? 2 : pick_one(things, NUMTHINGS))
     {
-	case 0:
+	when 0:
 	    cur->o_type = POTION;
 	    cur->o_which = pick_one(p_magic, MAXPOTIONS);
 	when 1:
@@ -330,7 +323,7 @@ new_thing()
 	    cur->o_which = pick_one(r_magic, MAXRINGS);
 	    switch (cur->o_which)
 	    {
-		case R_ADDSTR:
+		when R_ADDSTR:
 		case R_PROTECT:
 		case R_ADDHIT:
 		case R_ADDDAM:
@@ -533,13 +526,16 @@ int numthings;
 add_line(fmt, arg)
 char *fmt, *arg;
 {
+    register WINDOW *tw;
+    register char *prompt = "--Press space to continue--";
+
     if (line_cnt == 0)
     {
 	    wclear(hw);
-	    if (slow_invent)
+	    if (inv_type == INV_SLOW)
 		mpos = 0;
     }
-    if (slow_invent)
+    if (inv_type == INV_SLOW)
     {
 	if (*fmt != '\0')
 	    msg(fmt, arg);
@@ -549,12 +545,37 @@ char *fmt, *arg;
     {
 	if (line_cnt >= LINES - 1 || fmt == NULL)
 	{
-	    mvwaddstr(hw, LINES - 1, 0, "--Press space to continue--");
-	    wrefresh(hw);
-	    w_wait_for(hw,' ');
-	    clearok(curscr, TRUE);
-	    wclear(hw);
-            touchwin(stdscr);
+	    if (fmt == NULL && !newpage && inv_type == INV_OVER)
+	    {
+		tw = newwin(line_cnt + 1, COLS, 0, 0);
+		overwrite(hw, tw);
+		mvwaddstr(tw, line_cnt, 0, prompt);
+		touchwin(tw);
+		wrefresh(tw);
+		wait_for(' ');
+#ifndef	attron
+		if (CE)
+#else	attron
+		if (clr_eol)
+#endif	attron
+		{
+		    werase(tw);
+		    wrefresh(tw);
+		}
+		delwin(tw);
+		touchwin(stdscr);
+	    }
+	    else
+	    {
+		mvwaddstr(hw, LINES - 1, 0, prompt);
+		wrefresh(hw);
+		wait_for(' ');
+		clearok(curscr, TRUE);
+		wclear(hw);
+#ifdef	attron
+		touchwin(stdscr);
+#endif	attron
+	    }
 	    newpage = TRUE;
 	    line_cnt = 0;
 	}
@@ -573,7 +594,7 @@ char *fmt, *arg;
  */
 end_line()
 {
-    if (!slow_invent)
+    if (inv_type != INV_SLOW)
 	if (line_cnt == 1 && !newpage)
 	{
 	    mpos = 0;
@@ -604,7 +625,7 @@ register char type;
 	sp = &prbuf[strlen(prbuf)];
 	switch (type)
 	{
-	    case POTION: tystr = "potion";
+	    when POTION: tystr = "potion";
 	    when SCROLL: tystr = "scroll";
 	    when RING: tystr = "ring";
 	    when STICK: tystr = "stick";

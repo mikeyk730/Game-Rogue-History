@@ -1,36 +1,12 @@
 /*
  * Rogue definitions and variable declarations
  *
- * @(#)rogue.h	5.2 (Berkeley) 5/10/82
- *
- * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
- * All rights reserved.
- *
- * See the file LICENSE.TXT for full copyright and licensing information.
+ * @(#)rogue.h	5.11 (Berkeley) 8/25/83
  */
-
-typedef struct { 
-    const char *st_name;
-    const int   st_value;
-} STONE;
-   
-extern const char *rainbow[];
-extern const STONE stones[];
-extern const char *sylls[];
-extern const char *wood[];
-extern const char *metal[];
-
-#define NCOLORS 27
-#define NSYLLS  159
-#define NSTONES 26
-#define NWOOD   33
-#define NMETAL  22
 
 /*
  * Maximum number of different things
  */
-#define MAXDAEMONS  20
 #define MAXROOMS	9
 #define MAXTHINGS	9
 #define MAXOBJ		9
@@ -46,6 +22,14 @@ extern const char *metal[];
 #define	NORM	0	/* normal exit */
 #define	QUIT	1	/* quit option setting */
 #define	MINUS	2	/* back up one option */
+
+/*
+ * inventory types
+ */
+
+#define	INV_OVER	0
+#define	INV_SLOW	1
+#define	INV_CLEAR	2
 
 /*
  * All the fun defines
@@ -67,12 +51,9 @@ extern const char *metal[];
 #define attach(a,b)	_attach(&a,b)
 #define detach(a,b)	_detach(&a,b)
 #define free_list(a)	_free_list(&a)
-#ifndef max
 #define max(a,b)	((a) > (b) ? (a) : (b))
-#endif
 #define on(thing,flag)	(((thing).t_flags & (flag)) != 0)
-#undef CTRL
-#define CTRL(ch)	(ch & 037)
+#define CTRL(ch)	('ch' & 037)
 #define GOLDCALC	(rnd(50 + 10 * level) + 2)
 #define ISRING(h,r)	(cur_ring[h] != NULL && cur_ring[h]->o_which == r)
 #define ISWEARING(r)	(ISRING(LEFT, r) || ISRING(RIGHT, r))
@@ -110,7 +91,7 @@ extern const char *metal[];
 /*
  * Various constants
  */
-#define	PASSWD		"mTuZ7WUV9RWkQ"
+#define PASSWD		"mTE6myvIHoD4k"
 #define BEARTIME	spread(3)
 #define SLEEPTIME	spread(5)
 #define HEALTIME	spread(30)
@@ -145,6 +126,7 @@ extern const char *metal[];
 /* flags for rooms */
 #define ISDARK	0000001		/* room is dark */
 #define ISGONE	0000002		/* room is gone (a corridor) */
+#define ISMAZE	0000004		/* room is gone (a corridor) */
 
 /* flags for objects */
 #define ISCURSED 000001		/* object is cursed */
@@ -164,6 +146,8 @@ extern const char *metal[];
 #define ISHUH	0001000		/* creature is confused */
 #define ISINVIS	0002000		/* creature is invisible */
 #define ISMEAN	0004000		/* creature can wake when player enters room */
+/* #define ISTRIP	0004000		/* hero is on acid trip */
+#define ISTrip	0004000		/* hero is on acid trip */
 #define ISREGEN	0010000		/* creature can regenerate */
 #define ISRUN	0020000		/* creature is running at the player */
 #define SEEMONST 040000		/* hero can detect unseen monsters */
@@ -173,10 +157,11 @@ extern const char *metal[];
  * Flags for level map
  */
 #define F_PASS		0x80		/* is a passageway */
-#define F_SEEN		0x40		/* have seen this corridor before */
+#define F_SEEN		0x40		/* have seen this spot before */
 #define F_DROPPED	0x20		/* object was dropped here */
 #define F_LOCKED	0x20		/* door is locked */
 #define F_REAL		0x10		/* what you see is what you get */
+#define F_MEXIT		0x10		/* "passage" is exit from maze */
 #define F_PNUM		0x0f		/* passage number mask */
 #define F_TMASK		0x07		/* trap number mask */
 
@@ -195,7 +180,7 @@ extern const char *metal[];
  * Potion types
  */
 #define P_CONFUSE	0
-#define P_PARALYZE	1
+#define P_LSD		1
 #define P_POISON	2
 #define P_STRENGTH	3
 #define P_SEEINVIS	4
@@ -283,7 +268,7 @@ extern const char *metal[];
  */
 
 #define WS_LIGHT	0
-#define WS_HIT		1
+#define WS_INVIS	1
 #define WS_ELECT	2
 #define WS_FIRE		3
 #define WS_COLD		4
@@ -319,17 +304,6 @@ typedef struct {
     shint y;
 } coord;
 
-/* daemon/fuse data type */
-
-struct delayed_action {
-    int d_type;
-    int (*d_func)();
-    int d_arg;
-    int d_time;
-};
-
-/**/
-
 typedef unsigned int str_t;
 
 /*
@@ -337,7 +311,7 @@ typedef unsigned int str_t;
  */
 
 struct magic_item {
-    const char *mi_name;
+    char *mi_name;
     shint mi_prob;
     short mi_worth;
 };
@@ -364,8 +338,8 @@ struct stats {
     shint s_lvl;			/* Level of mastery */
     shint s_arm;			/* Armor class */
     short s_hpt;			/* Hit points */
-    char s_dmg[16];			/* String describing damage done */
-    shint s_maxhp;			/* Max hit points */
+    char *s_dmg;			/* String describing damage done */
+    short s_maxhp;			/* Max hit points */
 };
 
 /*
@@ -384,7 +358,6 @@ union thing {
 	struct stats _t_stats;		/* Physical description */
 	struct room *_t_room;		/* Current room for thing */
 	union thing *_t_pack;		/* What the thing is carrying */
-    int  _t_reserved;
     } _t;
     struct {
 	union thing *_l_next, *_l_prev;	/* Next pointer in link */
@@ -392,8 +365,8 @@ union thing {
 	coord _o_pos;			/* Where it lives on the screen */
 	char *_o_text;			/* What it says if you read it */
 	char _o_launch;			/* What you need to launch it */
-	char _o_damage[8];		/* Damage if used like sword */
-	char _o_hurldmg[8];		/* Damage if thrown */
+	char *_o_damage;		/* Damage if used like sword */
+	char *_o_hurldmg;		/* Damage if thrown */
 	shint _o_count;			/* Count for plural objects */
 	shint _o_which;			/* Which object of a type it is */
 	shint _o_hplus;			/* Plusses to hit */
@@ -418,7 +391,6 @@ typedef union thing THING;
 #define t_stats		_t._t_stats
 #define t_pack		_t._t_pack
 #define t_room		_t._t_room
-#define t_reserved      _t._t_reserved
 #define o_type		_o._o_type
 #define o_pos		_o._o_pos
 #define o_text		_o._o_text
@@ -434,15 +406,14 @@ typedef union thing THING;
 #define o_goldval	o_ac
 #define o_flags		_o._o_flags
 #define o_group		_o._o_group
-#define o_reserved      _o._o_reserved
 
 /*
  * Array containing information on all the various types of mosnters
  */
 struct monster {
-    const char *m_name;			/* What to call the monster */
-    const shint m_carry;			/* Probability of carrying something */
-    const short m_flags;			/* Things about the monster */
+    char *m_name;			/* What to call the monster */
+    shint m_carry;			/* Probability of carrying something */
+    short m_flags;			/* Things about the monster */
     struct stats m_stats;		/* Initial stats */
 };
 
@@ -450,12 +421,10 @@ struct monster {
  * External variables
  */
 
-extern struct delayed_action d_list[20];
-
 extern THING	*_monst[], *cur_armor, *cur_ring[], *cur_weapon,
-		*lvl_obj, *mlist, player;
+		*del_obj, *lvl_obj, *mlist, player;
 
-extern coord	delta, oldpos;
+extern coord	delta, oldpos, stairs;
 
 extern struct h_list	helpstr[];
 

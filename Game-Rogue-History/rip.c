@@ -2,21 +2,23 @@
  * File for the fun ends
  * Death or a total win
  *
- * @(#)rip.c	4.28 (Berkeley) 4/12/82
- *
- * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
- * All rights reserved.
- *
- * See the file LICENSE.TXT for full copyright and licensing information.
+ * @(#)rip.c	4.32 (NMT from Berkeley 5.2) 8/25/83
  */
 
 #include <curses.h>
+#ifdef	attron
+#include <term.h>
+#endif	attron
 #include <time.h>
 #include <signal.h>
 #include <sys/types.h>
 #include <pwd.h>
 #include "rogue.h"
+#include "score.h"
+
+#ifdef	attron
+# define	_puts(s)	tputs(s, 0, _putchar);
+#endif
 
 static char *rip[] = {
 "                       __________",
@@ -29,7 +31,7 @@ static char *rip[] = {
 "                  |                  |",
 "                  |   killed by a    |",
 "                  |                  |",
-"                  |       1980       |",
+"                  |       1984       |",
 "                 *|     *  *  *      | *",
 "         ________)/\\\\_//(\\/(/\\)/\\//\\/|_)_______",
     0
@@ -44,39 +46,32 @@ score(amount, flags, monst)
 int amount, flags;
 char monst;
 {
-    register struct sc_ent *scp;
+    register SCORE *scp;
     register int i;
-    register struct sc_ent *sc2;
+    register SCORE *sc2;
     register FILE *outf;
-    register char *killer;
     register int prflags = 0;
-    register void (*fp)();
-    register int uid;
-    char scoreline[MAXSTR + 100];
+    register int (*fp)(), uid;
 
-    static struct sc_ent {
-	char sc_name[MAXSTR];
-	unsigned int sc_flags;
-	unsigned int sc_uid;
-	unsigned short sc_monster;
-	unsigned short sc_score;
-	unsigned short sc_level;
-    } top_ten[10];
-    static char *reason[] = {
+    static SCORE top_ten[10];
+    static char  *reason[] = {
 	"killed",
 	"quit",
 	"A total winner",
     };
-    void endit();
+    int	endit();
 
     start_score();
 
+    if (flags != -1)
+	endwin();
+
     if (fd >= 0)
-	outf = (FILE *) fdopen(fd, "wb");
+	outf = fdopen(fd, "w");
     else
 	return;
 
-    for (scp = top_ten; scp <= &top_ten[9]; scp++)
+    for (scp = top_ten; scp < &top_ten[10]; scp++)
     {
 	scp->sc_score = 0;
 	for (i = 0; i < MAXSTR; i++)
@@ -94,13 +89,9 @@ char monst;
 #endif
 	)
     {
-	mvaddstr(LINES - 1, 0 , "[Press return to continue]");
-        refresh();
-        wgetnstr(stdscr,prbuf,80);
-        move(LINES - 1, 0);
-        clrtoeol();
-        refresh();
-        endwin();
+	printf("[Press return to continue]");
+	fflush(stdout);
+	gets(prbuf);
     }
 #ifdef WIZARD
     if (wizard)
@@ -109,14 +100,7 @@ char monst;
 	else if (strcmp(prbuf, "edit") == 0)
 	    prflags = 2;
 #endif
-    for(i=0; i<10; i++)
-    {
-        encread((char *) &top_ten[i].sc_name, MAXSTR, fd);
-        encread((char *) scoreline, 100, fd);
-        sscanf(scoreline, "%d %d %hd %hd %hd", &top_ten[i].sc_flags, 
-            &top_ten[i].sc_uid, &top_ten[i].sc_monster, &top_ten[i].sc_score,
-            &top_ten[i].sc_level);
-    }
+    encread((char *) top_ten, sizeof top_ten, fd);
     /*
      * Insert her in list if need be
      */
@@ -124,25 +108,20 @@ char monst;
     if (!noscore)
     {
 	uid = getuid();
-
-	for (scp = top_ten; scp <= &top_ten[9]; scp++)
+	for (scp = top_ten; scp < &top_ten[10]; scp++)
 	    if (amount > scp->sc_score)
 		break;
-#ifdef LIMIT_TOPTEN
-            else if (flags != 2 && scp->sc_uid == uid && scp->sc_flags != 2)
-		scp = &top_ten[9] + 1;	/* only one score per nowin uid */
-#endif
-	if (scp <= &top_ten[9])
+	    else if (flags != 2 && scp->sc_uid == uid && scp->sc_flags != 2)
+		scp = &top_ten[10];	/* only one score per nowin uid */
+	if (scp < &top_ten[10])
 	{
-#ifdef LIMIT_TOPTEN
 	    if (flags != 2)
-		for (sc2 = scp; sc2 <= &top_ten[9]; sc2++)
+		for (sc2 = scp; sc2 < &top_ten[10]; sc2++)
 		{
 		    if (sc2->sc_uid == uid && sc2->sc_flags != 2)
 			break;
 		}
 	    else
-#endif
 		sc2 = &top_ten[9];
 	    while (sc2 > scp)
 	    {
@@ -164,10 +143,19 @@ char monst;
     /*
      * Print the list
      */
-    printf("Top Ten Rogueists:\nRank\tScore\tName\n");
-    for (scp = top_ten; scp <= &top_ten[9]; scp++)
+    printf("\nTop Ten Rogueists:\nRank\tScore\tName\n");
+    for (scp = top_ten; scp < &top_ten[10]; scp++)
     {
+	int _putchar();
+
 	if (scp->sc_score) {
+#ifndef	attron
+	    if (sc2 == scp && SO)
+		_puts(SO);
+#else	attron
+	    if (sc2 == scp && enter_standout_mode)
+		_puts(enter_standout_mode);
+#endif	attron
 	    printf("%d\t%d\t%s: %s on level %d", scp - top_ten + 1,
 		scp->sc_score, scp->sc_name, reason[scp->sc_flags],
 		scp->sc_level);
@@ -186,7 +174,7 @@ char monst;
 	    else if (prflags == 2)
 	    {
 		fflush(stdout);
-          	fgets(prbuf,80,stdin);
+		gets(prbuf);
 		if (prbuf[0] == 'd')
 		{
 		    for (sc2 = scp; sc2 < &top_ten[9]; sc2++)
@@ -202,6 +190,13 @@ char monst;
 	    }
 	    else
 		printf(".\n");
+#ifndef	attron
+	    if (sc2 == scp && SE)
+		_puts(SE);
+#else	attron
+	    if (sc2 == scp && exit_standout_mode)
+		_puts(exit_standout_mode);
+#endif	attron
 	}
 	else
 	    break;
@@ -214,19 +209,8 @@ char monst;
     {
 	if (lock_sc())
 	{
-            int i;
-
 	    fp = signal(SIGINT, SIG_IGN);
-
-            for(i=0; i<10; i++)
-            {
-                encwrite((char *) &top_ten[i].sc_name, MAXSTR, outf);
-                sprintf(scoreline," %d %d %hd %hd %hd \n",
-                    top_ten[i].sc_flags, top_ten[i].sc_uid, 
-                    top_ten[i].sc_monster, top_ten[i].sc_score,
-                    top_ten[i].sc_level);
-                encwrite((char *) scoreline, 100, outf);
-            }
+	    encwrite((char *) top_ten, sizeof top_ten, outf);
 	    unlock_sc();
 	    signal(SIGINT, fp);
 	}
@@ -265,9 +249,10 @@ register char monst;
 	mvaddch(16, 32, ' ');
     else
 	mvaddstr(16, 33, vowelstr(killer));
-    sprintf(prbuf, "%2d", 1900+lt->tm_year);
-    mvaddstr(18, 26, prbuf);
+    mvaddstr(18, 28, sprintf(prbuf, "%2d", lt->tm_year));
     move(LINES-1, 0);
+    refresh();
+    mvprintf(0,0,"Doing score\n");
     refresh();
     score(purse, 0, monst);
     exit(0);
@@ -310,12 +295,12 @@ total_winner()
     {
 	switch (obj->o_type)
 	{
-	    case FOOD:
+	    when FOOD:
 		worth = 2 * obj->o_count;
 	    when WEAPON:
 		switch (obj->o_which)
 		{
-		    case MACE: worth = 8;
+		    when MACE: worth = 8;
 		    when SWORD: worth = 15;
 		    when CROSSBOW: worth = 30;
 		    when ARROW: worth = 1;
@@ -331,7 +316,7 @@ total_winner()
 	    when ARMOR:
 		switch (obj->o_which)
 		{
-		    case LEATHER: worth = 20;
+		    when LEATHER: worth = 20;
 		    when RING_MAIL: worth = 25;
 		    when STUDDED_LEATHER: worth = 20;
 		    when SCALE_MAIL: worth = 30;
@@ -384,7 +369,7 @@ total_winner()
     }
     mvprintw(c - 'a' + 1, 0,"   %5d  Gold Pieces          ", oldpurse);
     refresh();
-    score(purse, 2, 0);
+    score(purse, 2);
     exit(0);
 }
 
@@ -397,14 +382,14 @@ killname(monst, doart)
 register char monst;
 bool doart;
 {
-    register const char *sp;
+    register char *sp;
     register bool article;
 
     sp = prbuf;
     article = TRUE;
     switch (monst)
     {
-	case 'a':
+	when 'a':
 	    sp = "arrow";
 	when 'b':
 	    sp = "bolt";
@@ -429,3 +414,11 @@ bool doart;
     strcat(prbuf, sp);
     return prbuf;
 }
+
+#ifdef	attron
+_putchar(c)
+char c;
+{
+	putchar(c);
+}
+#endif	attron

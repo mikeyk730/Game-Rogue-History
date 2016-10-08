@@ -1,13 +1,7 @@
 /*
  * Draw the connecting passages
  *
- * @(#)passages.c	4.8 (Berkeley) 1/27/82
- *
- * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
- * All rights reserved.
- *
- * See the file LICENSE.TXT for full copyright and licensing information.
+ * @(#)passages.c	4.10 (NMT from Berkeley 5.2) 8/25/83
  */
 
 #include <curses.h>
@@ -42,7 +36,7 @@ do_passages()
     /*
      * reinitialize room graph description
      */
-    for (r1 = rdes; r1 <= &rdes[MAXROOMS-1]; r1++)
+    for (r1 = rdes; r1 < &rdes[MAXROOMS]; r1++)
     {
 	for (j = 0; j < MAXROOMS; j++)
 	    r1->isconn[j] = FALSE;
@@ -167,17 +161,20 @@ int r1, r2;
 	epos.x = rpt->r_pos.x;			/* end of move */
 	epos.y = rpt->r_pos.y;
 	if (!(rpf->r_flags & ISGONE))		/* if not gone pick door pos */
-	{
-	    spos.x += rnd(rpf->r_max.x - 2) + 1;
-	    spos.y += rpf->r_max.y - 1;
-	}
+	    do
+	    {
+		spos.x = rpf->r_pos.x + rnd(rpf->r_max.x - 2) + 1;
+		spos.y = rpf->r_pos.y + rpf->r_max.y - 1;
+	    } while ((rpf->r_flags & ISMAZE) && chat(spos.y,spos.x) != PASSAGE);
 	if (!(rpt->r_flags & ISGONE))
-	    epos.x += rnd(rpt->r_max.x - 2) + 1;
+	    do
+	    {
+		epos.x = rpt->r_pos.x + rnd(rpt->r_max.x - 2) + 1;
+	    } while ((rpt->r_flags & ISMAZE) && chat(epos.y,epos.x) != PASSAGE);
 	distance = abs(spos.y - epos.y) - 1;	/* distance to move */
 	turn_delta.y = 0;			/* direction to turn */
 	turn_delta.x = (spos.x < epos.x ? 1 : -1);
 	turn_distance = abs(spos.x - epos.x);	/* how far to turn */
-	turn_spot = rnd(distance-1) + 1;		/* where turn starts */
     }
     else if (direc == 'r')			/* setup for moving right */
     {
@@ -190,22 +187,28 @@ int r1, r2;
 	epos.x = rpt->r_pos.x;
 	epos.y = rpt->r_pos.y;
 	if (!(rpf->r_flags & ISGONE))
-	{
-	    spos.x += rpf->r_max.x-1;
-	    spos.y += rnd(rpf->r_max.y-2)+1;
-	}
+	    do
+	    {
+		spos.x = rpf->r_pos.x + rpf->r_max.x - 1;
+		spos.y = rpf->r_pos.y + rnd(rpf->r_max.y - 2) + 1;
+	    } while ((rpf->r_flags & ISMAZE) && chat(spos.y,spos.x) != PASSAGE);
 	if (!(rpt->r_flags & ISGONE))
-	    epos.y += rnd(rpt->r_max.y-2)+1;
+	    do
+	    {
+		epos.y = rpt->r_pos.y + rnd(rpt->r_max.y - 2) + 1;
+	    } while ((rpt->r_flags & ISMAZE) && chat(epos.y,epos.x) != PASSAGE);
 	distance = abs(spos.x - epos.x) - 1;
 	turn_delta.y = (spos.y < epos.y ? 1 : -1);
 	turn_delta.x = 0;
 	turn_distance = abs(spos.y - epos.y);
-	turn_spot = rnd(distance-1) + 1;
     }
 #ifdef WIZARD
     else
 	debug("error in connection tables");
 #endif
+
+    turn_spot = rnd(distance - 1) + 1;		/* where turn starts */
+
     /*
      * Draw in the doors on either side of the passage or just put #'s
      * if the rooms are gone.
@@ -231,7 +234,7 @@ int r1, r2;
      */
     curr.x = spos.x;
     curr.y = spos.y;
-    while (distance)
+    while (distance > 0)
     {
 	/*
 	 * Move to new position
@@ -275,15 +278,22 @@ register coord *cp;
 {
     register int index;
 
+    rm->r_exit[rm->r_nexits++] = *cp;
+
+    if (rm->r_flags & ISMAZE)
+	return;
+
     index = INDEX(cp->y, cp->x);
     if (rnd(10) + 1 < level && rnd(5) == 0)
     {
-	_level[index] = (cp->y == rm->r_pos.y || cp->y == rm->r_pos.y + rm->r_max.y - 1) ? '-' : '|';
+	if (cp->y == rm->r_pos.y || cp->y == rm->r_pos.y + rm->r_max.y - 1)
+		_level[index] = '-';
+	else
+		_level[index] = '|';
 	_flags[index] &= ~F_REAL;
     }
     else
 	_level[index] = DOOR;
-    rm->r_exit[rm->r_nexits++] = *cp;
 }
 
 #ifdef WIZARD
@@ -337,6 +347,8 @@ register int y, x;
     register struct room *rp;
     register char ch;
 
+    if (x >= COLS || x < 0 || y >= LINES || y < 1)
+	return;
     fp = &flat(y, x);
     if (*fp & F_PNUM)
 	return;

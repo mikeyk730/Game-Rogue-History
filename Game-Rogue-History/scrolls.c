@@ -1,13 +1,7 @@
 /*
  * Read a scroll and let it happen
  *
- * @(#)scrolls.c	4.21 (Berkeley) 4/6/82
- *
- * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
- * All rights reserved.
- *
- * See the file LICENSE.TXT for full copyright and licensing information.
+ * @(#)scrolls.c	4.24 (NMT from Berkeley 5.2) 8/25/83
  */
 
 #include <curses.h>
@@ -24,7 +18,7 @@ read_scroll()
     register int y, x;
     register char ch;
     register THING *op;
-    register int index;
+    register int index, mcount;
     register bool discardit = FALSE;
 
     obj = get_item("read", SCROLL);
@@ -38,26 +32,31 @@ read_scroll()
 	    msg("nothing to read");
 	return;
     }
-    msg("as you read the scroll, it vanishes");
     /*
      * Calculate the effect it has on the poor guy.
      */
     if (obj == cur_weapon)
 	cur_weapon = NULL;
+    del_obj = obj;
     switch (obj->o_which)
     {
-	case S_CONFUSE:
+	when S_CONFUSE:
 	    /*
 	     * Scroll of monster confusion.  Give him that power.
 	     */
 	    player.t_flags |= CANHUH;
-	    msg("your hands begin to glow red");
+	    addmsg("your hands begin to glow ");
+	    if (on(player, ISTrip))
+		msg(rnd_color());
+	    else
+		msg("red");
 	when S_ARMOR:
 	    if (cur_armor != NULL)
 	    {
 		cur_armor->o_ac--;
 		cur_armor->o_flags &= ~ISCURSED;
-		msg("your armor glows faintly for a moment");
+		msg("your armor glows %s for a moment",
+		    on(player, ISTrip) ? rnd_color() : "silver");
 	    }
 	when S_HOLD:
 	    /*
@@ -65,15 +64,30 @@ read_scroll()
 	     * from chasing after the hero.
 	     */
 
+	    mcount = 0;
 	    for (x = hero.x - 2; x <= hero.x + 2; x++)
 		if (x >= 0 && x < COLS)
 		    for (y = hero.y - 2; y <= hero.y + 2; y++)
 			if (y >= 0 && y <= LINES - 1)
-			    if ((op = moat(y, x)) != NULL)
+			    if ((op = moat(y, x)) != NULL && on(*op, ISRUN))
 			    {
 				op->t_flags &= ~ISRUN;
 				op->t_flags |= ISHELD;
+				mcount++;
 			    }
+	    if (mcount)
+	    {
+		addmsg("the monster");
+		if (mcount > 1)
+		    addmsg("s around you");
+		addmsg(" freeze");
+		if (mcount == 1)
+		    addmsg("s");
+		endmsg();
+		s_know[S_HOLD] = TRUE;
+	    }
+	    else
+		msg("you feel a strange sense of loss");
 	when S_SLEEP:
 	    /*
 	     * Scroll which makes you fall asleep
@@ -212,7 +226,9 @@ read_scroll()
 		    cur_weapon->o_hplus++;
 		else
 		    cur_weapon->o_dplus++;
-		msg("your %s glows blue for a moment", w_names[cur_weapon->o_which]);
+		msg("your %s glows %s for a moment",
+		    w_names[cur_weapon->o_which],
+		    on(player, ISTrip) ? rnd_color() : "blue");
 	    }
 	when S_SCARE:
 	    /*
@@ -229,7 +245,10 @@ read_scroll()
 		cur_ring[LEFT]->o_flags &= ~ISCURSED;
 	    if (cur_ring[RIGHT] != NULL)
 		cur_ring[RIGHT]->o_flags &= ~ISCURSED;
-	    msg("you feel as if somebody is watching over you");
+	    if (on(player, ISTrip))
+		msg("you feel in touch with the Universal Onenes");
+	    else
+		msg("you feel as if somebody is watching over you");
 	when S_AGGR:
 	    /*
 	     * This scroll aggravates all the monsters on the current
@@ -238,7 +257,10 @@ read_scroll()
 	    aggravate();
 	    msg("you hear a high pitched humming noise");
 	when S_NOP:
-	    msg("this scroll seems to be blank");
+	    if (on(player, ISTrip))
+		msg("what an interesting piece of paper.  Like, groovy, man!");
+	    else
+		msg("this scroll seems to be blank");
 	when S_GENOCIDE:
 	    s_know[S_GENOCIDE] = TRUE;
 	    msg("you have been granted the boon of genocide");
@@ -265,4 +287,5 @@ read_scroll()
 
     if (discardit)
 	discard(obj);
+    del_obj = NULL;
 }

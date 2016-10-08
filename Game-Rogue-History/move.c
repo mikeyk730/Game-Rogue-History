@@ -1,13 +1,7 @@
 /*
  * Hero movement commands
  *
- * @(#)move.c	4.24 (Berkeley) 5/12/82
- *
- * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
- * All rights reserved.
- *
- * See the file LICENSE.TXT for full copyright and licensing information.
+ * @(#)move.c	4.28 (NMT from Berkeley 5.2) 8/25/83
  */
 
 #include <curses.h>
@@ -162,6 +156,13 @@ hit_bound:
 		return;
 	    goto move_stuff;
 	case PASSAGE:
+	    /*
+	     * when you're in a corridor, you don't know if you're in
+	     * a maze room or not, and there ain't no way to find out
+	     * if you're leaving a maze room, so it is necessary to
+	     * always recalculate proom.
+	     */
+	    proom = roomin(&hero);
 	    goto move_stuff;
 	case FLOOR:
 	    if (!(fl & F_REAL))
@@ -223,7 +224,6 @@ struct room *rp;
 	    for (k = rp->r_pos.x; k < rp->r_pos.x + rp->r_max.x; k++)
 	    {
 		ch = winat(j, k);
-		move(j, k);
 		if (isupper(ch))
 		{
 		    item = wake_monster(j, k);
@@ -248,9 +248,10 @@ register coord *tc;
     index = INDEX(tc->y, tc->x);
     _level[index] = TRAP;
     tr = _flags[index] & F_TMASK;
+    _flags[index] |= F_SEEN;
     switch (tr)
     {
-	case T_DOOR:
+	when T_DOOR:
 	    level++;
 	    new_level();
 	    msg("you fell into a trap!");

@@ -1,28 +1,24 @@
 /*
  * save and restore routines
  *
- * @(#)save.c	4.15 (Berkeley) 5/10/82
- *
- * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
- * All rights reserved.
- *
- * See the file LICENSE.TXT for full copyright and licensing information.
+ * @(#)save.c	4.20 (NMT from Berkeley 5.2) 8/25/83
  */
 
 #include <curses.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <errno.h>
-#define KERNEL
 #include <signal.h>
-#undef KERNEL
 #include "rogue.h"
 
 typedef struct stat STAT;
 
-extern char version[], encstr[];
+extern char *sys_errlist[], version[], encstr[];
+#ifndef	attron
 extern bool _endwin;
+#endif	attron
+extern int errno;
+
+char *sbrk();
 
 STAT sbuf;
 
@@ -100,7 +96,7 @@ gotfile:
 	}
 	strcpy(file_name, buf);
 	if ((savef = fopen(file_name, "w")) == NULL)
-	    msg(strerror(errno));	/* fake perror() */
+	    msg(sys_errlist[errno]);	/* fake perror() */
     } while (savef == NULL);
 
     /*
@@ -116,7 +112,6 @@ gotfile:
  *	Automatically save a file.  This is used if a HUP signal is
  *	recieved
  */
-void
 auto_save()
 {
     register FILE *savef;
@@ -137,9 +132,6 @@ auto_save()
 save_file(savef)
 register FILE *savef;
 {
-    int slines = LINES;
-    int scols  = COLS;
-
     /*
      * close any open score file
      */
@@ -154,17 +146,10 @@ register FILE *savef;
     fwrite("junk", 1, 5, savef);
 
     fseek(savef, 0L, 0);
-
-    encwrite(version,strlen(version)+1,savef);
-    encwrite(&sbuf.st_ino,sizeof(sbuf.st_ino),savef);
-    encwrite(&sbuf.st_dev,sizeof(sbuf.st_dev),savef);
-    encwrite(&sbuf.st_ctime,sizeof(sbuf.st_ctime),savef);
-    encwrite(&sbuf.st_mtime,sizeof(sbuf.st_mtime),savef);
-    encwrite(&slines,sizeof(slines),savef);
-    encwrite(&scols,sizeof(scols),savef);
-	msg("");
-    rs_save_file(savef);
-
+#ifndef	attron
+    _endwin = TRUE;
+#endif	attron
+    encwrite(version, sbrk(0) - version, savef);
     fclose(savef);
 }
 
@@ -178,12 +163,11 @@ register char *file;
 char **envp;
 {
     register int inf;
-    void (*func)();
     register bool syml;
+    register char *sp;
     extern char **environ;
     char buf[MAXSTR];
     STAT sbuf2;
-    int slines, scols;
 
     if (strcmp(file, "-r") == 0)
 	file = file_name;
@@ -193,8 +177,9 @@ char **envp;
      * If a process can be suspended, this code wouldn't work
      */
 # ifdef SIG_HOLD
-    func = signal(SIGTSTP, SIG_HOLD);
+    signal(SIGTSTP, SIG_HOLD);
 # else
+    signal(SIGTSTP, SIG_IGN);
 # endif
 #endif
 
@@ -203,18 +188,8 @@ char **envp;
 	perror(file);
 	return FALSE;
     }
-
-    fflush(stdout);
-    encread(buf, strlen(version) + 1, inf);
-    if (strcmp(buf, version) != 0)
-    {
-        printf("Sorry, saved game is out of date.\n");
-        return FALSE;
-    }
-
     fstat(inf, &sbuf2);
-    fflush(stdout);
-    syml = issymlink(file);
+    syml = symlink(file);
     if (
 #ifdef WIZARD
 	!wizard &&
@@ -226,14 +201,17 @@ char **envp;
     }
 
     fflush(stdout);
+    encread(buf, strlen(version) + 1, inf);
+    if (strcmp(buf, version) != 0)
+    {
+	printf("Sorry, saved game is out of date.\n");
+	return FALSE;
+    }
 
-    encread(&sbuf.st_ino,sizeof(sbuf.st_ino), inf);
-    encread(&sbuf.st_dev,sizeof(sbuf.st_dev), inf);
-    encread(&sbuf.st_ctime,sizeof(sbuf.st_ctime), inf);
-    encread(&sbuf.st_mtime,sizeof(sbuf.st_mtime), inf);
-    encread(&slines,sizeof(slines),inf);
-    encread(&scols,sizeof(scols),inf);
-
+    fflush(stdout);
+    brk(version + sbuf2.st_size);
+    lseek(inf, 0L, 0);
+    encread(version, (unsigned int) sbuf2.st_size, inf);
     /*
      * we do not close the file so that we will have a hold of the
      * inode for as long as possible
@@ -245,33 +223,17 @@ char **envp;
 	if (sbuf2.st_ino != sbuf.st_ino || sbuf2.st_dev != sbuf.st_dev)
 	{
 	    printf("Sorry, saved game is not in the same file.\n");
-	    return FALSE;
+	    /* return FALSE; */
 	}
 	else if (sbuf2.st_ctime - sbuf.st_ctime > 15)
 	{
 	    printf("Sorry, file has been touched, so this score won't be recorded\n");
 	    noscore = TRUE;
 	}
-
-	initscr();
-
-	if (slines > LINES) 
-    { 
-        printf("Sorry, original game was played on a screen with %d lines.\n",slines); 
-        printf("Current screen only has %d lines. Unable to restore game\n",LINES); 
-        return(FALSE); 
-    } 
-    
-    if (scols > COLS) 
-    { 
-        printf("Sorry, original game was played on a screen with %d columns.\n",scols); 
-        printf("Current screen only has %d columns. Unable to restore game\n",COLS); 
-        return(FALSE); 
-    }
-
-	hw = newwin(LINES, COLS, 0, 0);
-    
-	mpos = 0;
+    mpos = 0;
+    initscr();
+    erase();
+    refresh();
     mvprintw(0, 0, "%s: %s", file, ctime(&sbuf2.st_mtime));
 
     /*
@@ -286,23 +248,33 @@ char **envp;
 	    return FALSE;
 	}
 
-    if (rs_restore_file(inf) == FALSE)
+    if (pstats.s_hpt <= 0)
     {
-        printf("Cannot restore file\n");
-        return(FALSE);
+	printf("\"He's dead, Jim\"\n");
+	return FALSE;
     }
-
 #ifdef SIGTSTP
     signal(SIGTSTP, tstp);
 #endif
+
     environ = envp;
+    gettmode();
+    if ((sp = getenv("TERM")) == NULL)
+	sp = Def_term;
+    setterm(sp);
     strcpy(file_name, file);
     setup();
+    if (del_obj != NULL)
+    {
+	inpack--;
+	if (del_obj->o_count > 1)
+	    del_obj->o_count--;
+	else
+	    detach(pack, del_obj);
+    }
     clearok(curscr, TRUE);
-    touchwin(stdscr);
     srand(getpid());
     msg("file name: %s", file);
-	status();
     playit();
     /*NOTREACHED*/
 }
@@ -311,13 +283,13 @@ char **envp;
  * encwrite:
  *	Perform an encrypted write
  */
-encwrite(starta, size, outf)
-void *starta;
+encwrite(start, size, outf)
+register char *start;
 unsigned int size;
 register FILE *outf;
 {
     register char *ep;
-    register char *start = (char *) starta;
+
     ep = encstr;
 
     while (size--)
@@ -332,14 +304,13 @@ register FILE *outf;
  * encread:
  *	Perform an encrypted read
  */
-encread(starta, size, inf)
-register void *starta;
+encread(start, size, inf)
+register char *start;
 unsigned int size;
 register int inf;
 {
     register char *ep;
     register int read_size;
-    register char *start = (char *) starta;
 
     if ((read_size = read(inf, start, size)) == -1 || read_size == 0)
 	return read_size;
@@ -352,6 +323,5 @@ register int inf;
 	if (*ep == '\0')
 	    ep = encstr;
     }
-
     return read_size;
 }

@@ -1,16 +1,11 @@
 /*
  * All the fighting gets done here
  *
- * @(#)fight.c	4.30 (Berkeley) 4/6/82
- *
- * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
- * All rights reserved.
- *
- * See the file LICENSE.TXT for full copyright and licensing information.
+ * @(#)fight.c	4.38 (NMT from Berkeley 5.2) 8/25/83
  */
 
 #include <curses.h>
+#include <unctrl.h>
 #include <ctype.h>
 #include "rogue.h"
 
@@ -31,12 +26,13 @@ bool thrown;
 {
     register THING *tp;
     register bool did_hit = TRUE;
-    register const char *mname;
+    register char *mname, ch;
 
     /*
      * Find the monster we want to fight
      */
 #ifdef WIZARD
+    debug("Fight()");
     if ((tp = moat(mp->y, mp->x)) == NULL)
 	debug("Fight what @ %d,%d", mp->y, mp->x);
 #else
@@ -47,22 +43,36 @@ bool thrown;
      * place.
      */
     count = quiet = 0;
-    runto(mp, &hero);
+    runto(mp);
     /*
      * Let him know it was really a mimic (if it was one).
      */
+    ch = '\0';
     if (tp->t_type == 'M' && tp->t_disguise != 'M' && !on(player, ISBLIND))
     {
 	tp->t_disguise = 'M';
+	if (on(player, ISTrip)) {
+	    ch = rnd(26) + 'A';
+	    mname = monsters[ch - 'A'].m_name;
+	    mvaddch(tp->t_pos.y, tp->t_pos.x, ch);
+	}
+	else
+	    mname = monsters['M'-'A'].m_name;
+	if (on(player, ISTrip))
+	    msg("wait!  That's a monster!");
+	else
+	    msg("wait!  That's a mimic!");
 	if (!thrown)
 	    return FALSE;
-	msg("wait! That's a mimic!");
     }
-    did_hit = FALSE;
-    if (on(player, ISBLIND))
-	mname = "it";
+    if (on(player, ISBLIND) ||
+       (on(*tp, ISINVIS) && !on(player, CANSEE|SEEMONST)))
+	    mname = (terse ? "it" : "something");
+    else if (on(player, ISTrip))
+	mname = monsters[toascii(mvinch(tp->t_pos.y, tp->t_pos.x))-'A'].m_name;
     else
 	mname = monsters[mn-'A'].m_name;
+    did_hit = FALSE;
     if (roll_em(&player, tp, weap, thrown))
     {
 	did_hit = FALSE;
@@ -75,7 +85,8 @@ bool thrown;
 	    did_hit = TRUE;
 	    tp->t_flags |= ISHUH;
 	    player.t_flags &= ~CANHUH;
-	    msg("your hands stop glowing red");
+	    msg("your hands stop glowing %s",
+		on(player, ISTrip) ? rnd_color() : "red");
 	}
 	if (tp->t_stats.s_hpt <= 0)
 	    killed(tp, TRUE);
@@ -98,7 +109,7 @@ bool thrown;
 attack(mp)
 register THING *mp;
 {
-    register const char *mname;
+    register char *mname, ch;
 
     /*
      * Since this is an attack, stop running and any healing that was
@@ -106,10 +117,21 @@ register THING *mp;
      */
     running = FALSE;
     count = quiet = 0;
-    if (mp->t_type == 'M' && !on(player, ISBLIND))
+    if (mp->t_type == 'M' && mp->t_disguise != 'M' && !on(player, ISBLIND))
+    {
 	mp->t_disguise = 'M';
-    if (on(player, ISBLIND))
-	mname = "it";
+	if (on(player, ISTrip))
+	    mvaddch(mp->t_pos.y, mp->t_pos.x, rnd(26) + 'A');
+    }
+    if (on(player, ISBLIND) ||
+       (on(*mp, ISINVIS) && !on(player, CANSEE|SEEMONST)))
+	    mname = (terse ? "it" : "something");
+    else if (on(player, ISTrip)) {
+	ch = toascii(mvinch(mp->t_pos.y, mp->t_pos.x));
+	if (!isupper(ch))
+	    addch(ch = rnd(26) + 'A');
+	mname = monsters[ch-'A'].m_name;
+    }
     else
 	mname = monsters[mp->t_type-'A'].m_name;
     if (roll_em(mp, &player, NULL, FALSE))
@@ -121,7 +143,7 @@ register THING *mp;
 	if (!on(*mp, ISCANC))
 	    switch (mp->t_type)
 	    {
-		case 'R':
+		when 'R':
 		    /*
 		     * If a rust monster hits, you lose armor, unless
 		     * that armor is leather or there is a magic ring
@@ -149,7 +171,7 @@ register THING *mp;
 		    {
 			addmsg("you are transfixed");
 			if (!terse)
-			    addmsg(" by the gaze of the floating eye");
+			    addmsg(" by the gaze of the %s", mname);
 			endmsg();
 		    }
 		    no_command += rnd(2) + 2;
@@ -223,8 +245,7 @@ register THING *mp;
 			purse -= GOLDCALC + GOLDCALC + GOLDCALC + GOLDCALC;
 		    if (purse < 0)
 			purse = 0;
-		    remove_monster(&mp->t_pos, mp, FALSE);
-			mp = NULL;
+		    remove(&mp->t_pos, mp, FALSE);
 		    if (purse != lastpurse)
 			msg("your purse feels lighter");
 		}
@@ -245,8 +266,7 @@ register THING *mp;
 				steal = obj;
 		    if (steal != NULL)
 		    {
-			remove_monster(&mp->t_pos, moat(mp->t_pos.y, mp->t_pos.x), FALSE);
-			mp = NULL;
+			remove(&mp->t_pos, moat(mp->t_pos.y, mp->t_pos.x), FALSE);
 			inpack--;
 			if (steal->o_count > 1 && steal->o_group == 0)
 			{
@@ -283,11 +303,6 @@ register THING *mp;
 	flush_type();
     count = 0;
     status();
-
-	if (mp == NULL)
-		return(-1);
-	else
-		return(0);
 }
 
 /*
@@ -342,7 +357,7 @@ bool hurl;
     register int hplus;
     register int dplus;
     register int damage;
-    char *index();
+    char *strchr();
 
     att = &thatt->t_stats;
     def = &thdef->t_stats;
@@ -378,20 +393,7 @@ bool hurl;
 	    else
 		cp = weap->o_hurldmg;
 	else
-	{
 	    cp = weap->o_damage;
-	    /*
-	     * Drain a staff of striking
-	     */
-	    if (weap->o_type == STICK && weap->o_which == WS_HIT
-		&& --weap->o_charges < 0)
-	    {
-		strcpy(weap->o_damage,"0d0");
-		cp = weap->o_damage;
-		weap->o_hplus = weap->o_dplus = 0;
-		weap->o_charges = 0;
-	    }
-	}
     }
     /*
      * If the creature being attacked is not running (alseep or held)
@@ -412,7 +414,7 @@ bool hurl;
     for (;;)
     {
 	ndice = atoi(cp);
-	if ((cp = index(cp, 'd')) == NULL)
+	if ((cp = strchr(cp, 'd')) == NULL)
 	    break;
 	nsides = atoi(++cp);
 	if (swing(att->s_lvl, def_arm, hplus + str_plus(att->s_str)))
@@ -428,7 +430,7 @@ bool hurl;
 	    def->s_hpt -= max(0, damage);
 	    did_hit = TRUE;
 	}
-	if ((cp = index(cp, '/')) == NULL)
+	if ((cp = strchr(cp, '/')) == NULL)
 	    break;
 	cp++;
     }
@@ -440,21 +442,21 @@ bool hurl;
  *	The print name of a combatant
  */
 char *
-prname(who, upper)
-register char *who;
+prname(mname, upper)
+register char *mname;
 bool upper;
 {
     static char tbuf[MAXSTR];
 
     *tbuf = '\0';
-    if (who == 0)
+    if (mname == 0)
 	strcpy(tbuf, "you"); 
-    else if (on(player, ISBLIND))
-	strcpy(tbuf, "it");
+    else if (strcmp(mname, "it") == 0 || strcmp(mname, "something") == 0)
+	strcpy(tbuf, (terse ? "it" : "something"));
     else
     {
 	strcpy(tbuf, "the ");
-	strcat(tbuf, who);
+	strcat(tbuf, mname);
     }
     if (upper)
 	*tbuf = toupper(*tbuf);
@@ -476,7 +478,7 @@ register char *er, *ee;
     else
 	switch (rnd(4))
 	{
-	    case 0: s = " scored an excellent hit on ";
+	    when 0: s = " scored an excellent hit on ";
 	    when 1: s = " hit ";
 	    when 2: s = (er == 0 ? " have injured " : " has injured ");
 	    when 3: s = (er == 0 ? " swing and hit " : " swings and hits ");
@@ -499,7 +501,7 @@ register char *er, *ee;
     addmsg(prname(er, TRUE));
     switch (terse ? 0 : rnd(4))
     {
-	case 0: s = (er == 0 ? " miss" : " misses");
+	when 0: s = (er == 0 ? " miss" : " misses");
 	when 1: s = (er == 0 ? " swing and miss" : " swings and misses");
 	when 2: s = (er == 0 ? " barely miss" : " barely misses");
 	when 3: s = (er == 0 ? " don't hit" : " doesn't hit");
@@ -599,14 +601,14 @@ raise_level()
  */
 thunk(weap, mname)
 register THING *weap;
-register const char *mname;
+register char *mname;
 {
     if (weap->o_type == WEAPON)
 	addmsg("the %s hits ", w_names[weap->o_which]);
     else
 	addmsg("you hit ");
-    if (on(player, ISBLIND))
-	msg("it");
+    if (strcmp(mname, "it") == 0 || strcmp(mname, "something") == 0)
+	msg(terse ? "it" : "something");
     else
 	msg("the %s", mname);
 }
@@ -617,23 +619,22 @@ register const char *mname;
  */
 bounce(weap, mname)
 register THING *weap;
-register const char *mname;
+register char *mname;
 {
     if (weap->o_type == WEAPON)
 	addmsg("the %s misses ", w_names[weap->o_which]);
     else
 	addmsg("you missed ");
-    if (on(player, ISBLIND))
-	msg("it");
-    else
-	msg("the %s", mname);
+    if (strcmp(mname, "it") != 0 && strcmp(mname, "something") != 0)
+	addmsg("the ");
+    msg(mname);
 }
 
 /*
  * remove:
  *	Remove a monster from the screen
  */
-remove_monster(mp, tp, waskill)
+remove(mp, tp, waskill)
 register coord *mp;
 register THING *tp;
 bool waskill;
@@ -687,13 +688,21 @@ killed(tp, pr)
 register THING *tp;
 bool pr;
 {
+    register char *mname;
+
+    if (pr)
+	if (!on(player, ISTrip))
+	    mname = monsters[tp->t_type-'A'].m_name;
+	else
+	    mname = monsters[toascii(mvinch(tp->t_pos.y,tp->t_pos.x))-'A'].m_name;
+
     pstats.s_exp += tp->t_stats.s_exp;
     /*
      * If the monster was a violet fungi, un-hold him
      */
     switch (tp->t_type)
     {
-	case 'F':
+	when 'F':
 	    player.t_flags &= ~ISHELD;
 	    fung_hit = 0;
 	    strcpy(monsters['F'-'A'].m_stats.s_dmg, "000d0");
@@ -716,19 +725,20 @@ bool pr;
     /*
      * Get rid of the monster.
      */
-    remove_monster(&tp->t_pos, tp, TRUE);
+    remove(&tp->t_pos, tp, TRUE);
     if (pr)
     {
 	if (!terse)
 	    addmsg("you have ");
 	addmsg("defeated ");
-	if (on(player, ISBLIND))
-	    msg("it");
+	if (on(player, ISBLIND) ||
+	   (on(*tp, ISINVIS) && !on(player, CANSEE|SEEMONST)))
+		msg(terse ? "it" : "something");
 	else
 	{
 	    if (!terse)
 		addmsg("the ");
-	    msg("%s", monsters[tp->t_type-'A'].m_name);
+	    msg(mname);
 	}
     }
     /*

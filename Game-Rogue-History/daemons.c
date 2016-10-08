@@ -1,19 +1,11 @@
 /*
  * All the daemon and fuse functions are in here
  *
- * @(#)daemons.c	4.10 (Berkeley) 4/6/82
- *
- * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
- * All rights reserved.
- *
- * See the file LICENSE.TXT for full copyright and licensing information.
+ * @(#)daemons.c	4.15 (NMT from Berkeley 5.2) 8/25/83
  */
 
 #include <curses.h>
 #include "rogue.h"
-
-int between = 0;
 
 /*
  * doctor:
@@ -61,6 +53,8 @@ swander()
  */
 rollwand()
 {
+    static int between = 0;
+
     if (++between >= 4)
     {
 	if (roll(1, 6) == 4)
@@ -80,7 +74,7 @@ rollwand()
 unconfuse()
 {
     player.t_flags &= ~ISHUH;
-    msg("you feel less confused now");
+    msg("you feel less %s now", on(player, ISTrip) ? "trippy" : "confused");
 }
 
 /*
@@ -112,7 +106,10 @@ sight()
 	player.t_flags &= ~ISBLIND;
 	if (!(proom->r_flags & ISGONE))
 	    enter_room(&hero);
-	msg("the veil of darkness lifts");
+	if (on(player, ISTrip))
+	    msg("far out!  Everything is all cosmic again");
+	else
+	    msg("the veil of darkness lifts");
     }
 }
 
@@ -148,9 +145,16 @@ stomach()
 	running = FALSE;
 	count = 0;
 	hungry_state = 3;
-	if (!terse)
-	    addmsg("you feel too weak from lack of food.  ");
-	msg("You faint");
+	if (on(player, ISTrip)) {
+	    if (!terse)
+		addmsg("the munchies overpower your motor capabilities.  ");
+	    msg("You freak out");
+	}
+	else {
+	    if (!terse)
+		addmsg("you feel too weak from lack of food.  ");
+	    msg("You faint");
+	}
     }
     else
     {
@@ -160,15 +164,116 @@ stomach()
 	if (food_left < MORETIME && oldfood >= MORETIME)
 	{
 	    hungry_state = 2;
-	    msg("you are starting to feel weak");
+	    if (on(player, ISTrip))
+		msg("the munchies are interfering with your motor capabilites");
+	    else
+		msg("you are starting to feel weak");
 	}
 	else if (food_left < 2 * MORETIME && oldfood >= 2 * MORETIME)
 	{
 	    hungry_state = 1;
-	    if (!terse)
-		msg("you are starting to get hungry");
+	    if (on(player, ISTrip)) {
+		if (!terse)
+		    addmsg("you are ");
+		msg("getting the munchies");
+	    }
 	    else
-		msg("getting hungry");
+		if (!terse)
+		    msg("you are starting to get hungry");
+		else
+		    msg("getting hungry");
 	}
     }
+}
+
+/*
+ * come_down:
+ *	Take the hero down off her acid trip.
+ */
+come_down()
+{
+    register THING *tp;
+    register bool seemonst;
+
+    if (!on(player, ISTrip))
+	return;
+
+    kill_daemon(visuals);
+
+    if (on(player, ISBLIND))
+	return;
+
+    /*
+     * undo the things
+     */
+    for (tp = lvl_obj; tp != NULL; tp = next(tp))
+	if (cansee(tp->o_pos.y, tp->o_pos.x))
+	    mvaddch(tp->o_pos.y, tp->o_pos.x, tp->o_type);
+
+    /*
+     * undo the stairs
+     */
+    if (seenstairs)
+	mvaddch(stairs.y, stairs.x, STAIRS);
+
+    /*
+     * undo the monsters
+     */
+    seemonst = on(player, SEEMONST);
+    for (tp = mlist; tp != NULL; tp = next(tp))
+	if (cansee(tp->t_pos.y, tp->t_pos.x))
+	    if (!on(*tp, ISINVIS) || on(player, CANSEE))
+		mvaddch(tp->t_pos.y, tp->t_pos.x, tp->t_disguise);
+	    else
+		mvaddch(tp->t_pos.y, tp->t_pos.x, chat(tp->t_pos.y, tp->t_pos.x));
+	else if (seemonst)
+	{
+	    standout();
+	    mvaddch(tp->t_pos.y, tp->t_pos.x, tp->t_type);
+	    standend();
+	}
+    player.t_flags &= ~ISTrip;
+    msg("Everything looks SO boring now.");
+}
+
+/*
+ * visuals:
+ *	change the characters for the player
+ */
+visuals()
+{
+    register THING *tp;
+    register bool seemonst;
+
+    if (!after)
+	return;
+    /*
+     * change the things
+     */
+    for (tp = lvl_obj; tp != NULL; tp = next(tp))
+	if (cansee(tp->o_pos.y, tp->o_pos.x))
+	    mvaddch(tp->o_pos.y, tp->o_pos.x, rnd_thing());
+
+    /*
+     * change the stairs
+     */
+    if (!seenstairs && cansee(stairs.y, stairs.x))
+	    mvaddch(stairs.y, stairs.x, rnd_thing());
+
+    /*
+     * change the monsters
+     */
+    seemonst = on(player, SEEMONST);
+    for (tp = mlist; tp != NULL; tp = next(tp))
+	if (see_monst(tp))
+	    if (tp->t_type == 'M' && tp->t_disguise != 'M')
+		mvaddch(tp->t_pos.y, tp->t_pos.x, rnd_thing());
+	    else
+		mvaddch(tp->t_pos.y, tp->t_pos.x, rnd(26) + 'A');
+	else if (seemonst)
+	{
+	    standout();
+	    mvaddch(tp->t_pos.y, tp->t_pos.x, rnd(26) + 'A');
+	    standend();
+	}
 }

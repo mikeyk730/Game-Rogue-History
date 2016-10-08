@@ -1,13 +1,7 @@
 /*
  * File with various monster functions in it
  *
- * @(#)monsters.c	4.24 (Berkeley) 4/6/82
- *
- * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
- * All rights reserved.
- *
- * See the file LICENSE.TXT for full copyright and licensing information.
+ * @(#)monsters.c	4.27 (NMT from Berkeley 5.2) 8/25/83
  */
 
 #include <curses.h>
@@ -21,13 +15,13 @@
  * the string not to be saved.  Otherwise genocide is lost through
  * saving a game.
  */
-char lvl_mons[] =  {
+static char lvl_mons[] =  {
     'K', 'J', 'B', 'S', 'H', 'E', 'A', 'O', 'Z', 'G', 'L', 'C', 'R',
     'Q', 'N', 'Y', 'T', 'W', 'F', 'I', 'X', 'U', 'M', 'V', 'P', 'D',
     '\0'
 };
 
-char wand_mons[] = {
+static char wand_mons[] = {
     'K', 'J', 'B', 'S', 'H', ' ', 'A', 'O', 'Z', 'G', ' ', 'C', 'R',
     'Q', ' ', 'Y', 'T', 'W', ' ', 'I', 'X', 'U', ' ', 'V', 'P', ' ',
     '\0'
@@ -81,18 +75,18 @@ register coord *cp;
     tp->t_stats.s_lvl = mp->m_stats.s_lvl + lev_add;
     tp->t_stats.s_maxhp = tp->t_stats.s_hpt = roll(tp->t_stats.s_lvl, 8);
     tp->t_stats.s_arm = mp->m_stats.s_arm - lev_add;
-    strncpy(tp->t_stats.s_dmg,mp->m_stats.s_dmg,16);
+    tp->t_stats.s_dmg = mp->m_stats.s_dmg;
     tp->t_stats.s_str = mp->m_stats.s_str;
     tp->t_stats.s_exp = mp->m_stats.s_exp + lev_add * 10 + exp_add(tp);
     tp->t_flags = mp->m_flags;
     tp->t_turn = TRUE;
     tp->t_pack = NULL;
     if (ISWEARING(R_AGGR))
-	runto(cp, &hero);
+	runto(cp);
     if (type == 'M')
 	switch (rnd(level > 25 ? 9 : 8))
 	{
-	    case 0: tp->t_disguise = GOLD;
+	    when 0: tp->t_disguise = GOLD;
 	    when 1: tp->t_disguise = POTION;
 	    when 2: tp->t_disguise = SCROLL;
 	    when 3: tp->t_disguise = STAIRS;
@@ -144,7 +138,7 @@ wanderer()
 	rnd_pos(rp, &cp);
     } until (rp != proom && step_ok(winat(cp.y, cp.x)));
     new_monster(tp, randmonster(TRUE), &cp);
-    runto(&tp->t_pos, &hero);
+    runto(&tp->t_pos);
 #ifdef WIZARD
     if (wizard)
 	msg("started a wandering %s", monsters[tp->t_type-'A'].m_name);
@@ -161,7 +155,7 @@ int y, x;
 {
     register THING *tp;
     register struct room *rp;
-    register char ch;
+    register char ch, *mname;
 
 #ifdef WIZARD
     if ((tp = moat(y, x)) == NULL)
@@ -194,7 +188,11 @@ int y, x;
 		else
 		    fuse(unconfuse, 0, rnd(20) + HUHDURATION, AFTER);
 		player.t_flags |= ISHUH;
-		msg("the umber hulk's gaze has confused you");
+		if (on(player, ISTrip))
+		    mname = monsters[toascii(mvinch(tp->t_pos.y, tp->t_pos.x))-'A'].m_name;
+		else
+		    mname = monsters[ch-'A'].m_name;
+		msg("the %s's gaze has confused you", mname);
 	    }
 	}
     }
@@ -242,7 +240,7 @@ genocide()
     {
 	nmp = next(mp);
 	if (mp->t_type == c)
-	    remove_monster(&mp->t_pos, mp, FALSE);
+	    remove(&mp->t_pos, mp, FALSE);
     }
     for (i = 0; i < 26; i++)
 	if (lvl_mons[i] == c)

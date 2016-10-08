@@ -1,17 +1,13 @@
+#include <curses.h>
+#include "rogue.h"
+
 /*
  * Routines dealing specifically with rings
  *
- * @(#)rings.c	4.13 (Berkeley) 1/28/82
- *
- * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
- * All rights reserved.
- *
- * See the file LICENSE.TXT for full copyright and licensing information.
+ * @(#)rings.c	4.14 (NMT from Berkeley 5.2) 8/25/83
  */
 
-#include <curses.h>
-#include "rogue.h"
+char *malloc();
 
 /*
  * ring_on:
@@ -194,7 +190,7 @@ register THING *obj;
 	return "";
     switch (obj->o_which)
     {
-	case R_PROTECT:
+	when R_PROTECT:
 	case R_ADDSTR:
 	case R_ADDDAM:
 	case R_ADDHIT:

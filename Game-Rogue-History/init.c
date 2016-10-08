@@ -1,13 +1,7 @@
 /*
  * global variable initializaton
  *
- * @(#)init.c	4.16 (Berkeley) 3/30/82
- *
- * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
- * All rights reserved.
- *
- * See the file LICENSE.TXT for full copyright and licensing information.
+ * @(#)init.c	4.19 (NMT from Berkeley 5.2) 8/25/83
  */
 
 #include <curses.h>
@@ -90,7 +84,7 @@ init_player()
  * potions and scrolls
  */
 
-const char *rainbow[NCOLORS] = {
+static char *rainbow[] = {
     "amber",
     "aquamarine",
     "black",
@@ -120,27 +114,34 @@ const char *rainbow[NCOLORS] = {
     "yellow",
 };
 
-const char *sylls[NSYLLS] = {
-    "a",   "ab",  "ag",  "aks", "ala", "an",  "ankh","app", "arg", "arze",
+#define NCOLORS (sizeof rainbow / sizeof (char *))
+
+static char *sylls[] = {
+    "a", "ab", "ag", "aks", "ala", "an", "ankh", "app", "arg", "arze",
     "ash", "ban", "bar", "bat", "bek", "bie", "bin", "bit", "bjor",
-    "blu", "bot", "bu",  "byt", "comp","con", "cos", "cre", "dalf",
-    "dan", "den", "do",  "e",   "eep", "el",  "eng", "er",  "ere", "erk",
-    "esh", "evs", "fa",  "fid", "for", "fri", "fu",  "gan", "gar",
-    "glen","gop", "gre", "ha",  "he",  "hyd", "i",   "ing", "ion", "ip",
-    "ish", "it",  "ite", "iv",  "jo",  "kho", "kli", "klis","la",  "lech",
-    "man", "mar", "me",  "mi",  "mic", "mik", "mon", "mung","mur",
-    "nej", "nelg","nep", "ner", "nes", "nes", "nih", "nin", "o",   "od",
-    "ood", "org", "orn", "ox",  "oxy", "pay", "pet", "ple", "plu", "po",
-    "pot", "prok","re",  "rea", "rhov","ri",  "ro",  "rog", "rok", "rol",
-    "sa",  "san", "sat", "see", "sef", "seh", "shu", "ski", "sna",
-    "sne", "snik","sno", "so",  "sol", "sri", "sta", "sun", "ta",
-    "tab", "tem", "ther","ti",  "tox", "trol","tue", "turs","u",
-    "ulk", "um",  "un",  "uni", "ur",  "val", "viv", "vly", "vom", "wah",
-    "wed", "werg","wex", "whon","wun", "xo",  "y",   "yot", "yu",
-    "zant","zap", "zeb", "zim", "zok", "zon", "zum",
+    "blu", "bot", "bu", "byt", "comp", "con", "cos", "cre", "dalf",
+    "dan", "den", "do", "e", "eep", "el", "eng", "er", "ere", "erk",
+    "esh", "evs", "fa", "fid", "for", "fri", "fu", "gan", "gar",
+    "glen", "gop", "gre", "ha", "he", "hyd", "i", "ing", "ion", "ip",
+    "ish", "it", "ite", "iv", "jo", "kho", "kli", "klis", "la", "lech",
+    "man", "mar", "me", "mi", "mic", "mik", "mon", "mung", "mur",
+    "nej", "nelg", "nep", "ner", "nes", "nes", "nih", "nin", "o", "od",
+    "ood", "org", "orn", "ox", "oxy", "pay", "pet", "ple", "plu", "po",
+    "pot", "prok", "re", "rea", "rhov", "ri", "ro", "rog", "rok", "rol",
+    "sa", "san", "sat", "see", "sef", "seh", "shu", "ski", "sna",
+    "sne", "snik", "sno", "so", "sol", "sri", "sta", "sun", "ta",
+    "tab", "tem", "ther", "ti", "tox", "trol", "tue", "turs", "u",
+    "ulk", "um", "un", "uni", "ur", "val", "viv", "vly", "vom", "wah",
+    "wed", "werg", "wex", "whon", "wun", "xo", "y", "yot", "yu",
+    "zant", "zap", "zeb", "zim", "zok", "zon", "zum",
 };
 
-const STONE stones[NSTONES] = {
+typedef struct {
+    char	*st_name;
+    int		st_value;
+} STONE;
+
+static STONE stones[] = {
     { "agate",		 25},
     { "alexandrite",	 40},
     { "amethyst",	 50},
@@ -160,7 +161,7 @@ const STONE stones[NSTONES] = {
     { "pearl",		220},
     { "peridot",	 63},
     { "ruby",		350},
-    { "saphire",	285},
+    { "sapphire",	285},
     { "stibotantalite",	200},
     { "tiger eye",	 50},
     { "topaz",		 60},
@@ -169,7 +170,9 @@ const STONE stones[NSTONES] = {
     { "zircon",	 	 80},
 };
 
-const char *wood[NWOOD] = {
+#define NSTONES (sizeof stones / sizeof (STONE))
+
+static char *wood[] = {
     "avocado wood",
     "balsa",
     "bamboo",
@@ -205,7 +208,9 @@ const char *wood[NWOOD] = {
     "zebrawood",
 };
 
-const char *metal[NMETAL] = {
+#define NWOOD (sizeof wood / sizeof (char *))
+
+static char *metal[] = {
     "aluminum",
     "beryllium",
     "bone",
@@ -230,6 +235,8 @@ const char *metal[NMETAL] = {
     "zinc",
 };
 
+#define NMETAL (sizeof metal / sizeof (char *))
+
 /*
  * init_things
  *	Initialize the probabilities for types of things
@@ -238,7 +245,7 @@ init_things()
 {
     register struct magic_item *mp;
 
-    for (mp = &things[1]; mp <= &things[NUMTHINGS-1]; mp++)
+    for (mp = &things[1]; mp < &things[NUMTHINGS]; mp++)
 	mp->mi_prob += (mp-1)->mi_prob;
 #ifdef WIZARD
     badcheck("things", things, NUMTHINGS);
@@ -282,8 +289,7 @@ init_colors()
 init_names()
 {
     register int nsyl;
-    register char *cp;
-    const char *sp;
+    register char *cp, *sp;
     register int i, nwords;
 
     for (i = 0; i < MAXSCROLLS; i++)
@@ -352,7 +358,7 @@ init_stones()
 init_materials()
 {
     register int i, j;
-    register const char *str;
+    register char *str;
     bool metused[NMETAL], woodused[NWOOD];
 
     for (i = 0; i < NWOOD; i++)
@@ -418,3 +424,13 @@ register int bound;
 	continue;
 }
 #endif
+
+/*
+ * rnd_color:
+ *	Pick a random color name and return it
+ */
+char *
+rnd_color()
+{
+    return (rainbow[rnd(NCOLORS)]);
+}

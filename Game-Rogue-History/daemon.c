@@ -2,13 +2,7 @@
  * Contains functions for dealing with things that happen in the
  * future.
  *
- * @(#)daemon.c	4.4 (Berkeley) 1/12/82
- *
- * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
- * All rights reserved.
- *
- * See the file LICENSE.TXT for full copyright and licensing information.
+ * @(#)daemon.c	4.5 (NMT from Berkeley 5.2) 8/25/83
  */
 
 #include <curses.h>
@@ -16,10 +10,16 @@
 
 #define EMPTY 0
 #define DAEMON -1
+#define MAXDAEMONS 20
 
 #define _X_ { EMPTY }
 
-struct delayed_action d_list[MAXDAEMONS] = {
+struct delayed_action {
+    int d_type;
+    int (*d_func)();
+    int d_arg;
+    int d_time;
+} d_list[MAXDAEMONS] = {
     _X_, _X_, _X_, _X_, _X_, _X_, _X_, _X_, _X_, _X_,
     _X_, _X_, _X_, _X_, _X_, _X_, _X_, _X_, _X_, _X_, 
 };
@@ -106,7 +106,7 @@ register int flag;
     /*
      * Loop through the devil list
      */
-    for (dev = d_list; dev <= &d_list[MAXDAEMONS-1]; dev++)
+    for (dev = d_list; dev < &d_list[MAXDAEMONS]; dev++)
 	/*
 	 * Executing each one, giving it the proper arguments
 	 */
@@ -171,7 +171,7 @@ register int flag;
     /*
      * Step though the list
      */
-    for (wire = d_list; wire <= &d_list[MAXDAEMONS-1]; wire++)
+    for (wire = d_list; wire < &d_list[MAXDAEMONS]; wire++)
     {
 	/*
 	 * Decrementing counters and starting things we want.  We also need

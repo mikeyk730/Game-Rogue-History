@@ -3,15 +3,12 @@
  * Special wizard commands (some of which are also non-wizard commands
  * under strange circumstances)
  *
- * @(#)wizard.c	4.14 (Berkeley) 1/26/82
+ * @(#)wizard.c	4.16 (NMT from Berkeley 5.2) 8/25/83
  */
 
 #include <curses.h>
-#include <termios.h>
 #include <ctype.h>
 #include "rogue.h"
-
-extern struct termios terminal;
 
 /*
  * whatis:
@@ -39,18 +36,18 @@ bool insist;
 
     switch (obj->o_type)
     {
-        case SCROLL:
+        when SCROLL:
 	    s_know[obj->o_which] = TRUE;
 	    if (s_guess[obj->o_which])
 	    {
-		free(s_guess[obj->o_which]);
+		cfree(s_guess[obj->o_which]);
 		s_guess[obj->o_which] = NULL;
 	    }
         when POTION:
 	    p_know[obj->o_which] = TRUE;
 	    if (p_guess[obj->o_which])
 	    {
-		free(p_guess[obj->o_which]);
+		cfree(p_guess[obj->o_which]);
 		p_guess[obj->o_which] = NULL;
 	    }
 	when STICK:
@@ -58,7 +55,7 @@ bool insist;
 	    obj->o_flags |= ISKNOW;
 	    if (ws_guess[obj->o_which])
 	    {
-		free(ws_guess[obj->o_which]);
+		cfree(ws_guess[obj->o_which]);
 		ws_guess[obj->o_which] = NULL;
 	    }
         when WEAPON:
@@ -69,7 +66,7 @@ bool insist;
 	    obj->o_flags |= ISKNOW;
 	    if (r_guess[obj->o_which])
 	    {
-		free(r_guess[obj->o_which]);
+		cfree(r_guess[obj->o_which]);
 		r_guess[obj->o_which] = NULL;
 	    }
     }
@@ -187,7 +184,6 @@ teleport()
     count = 0;
     running = FALSE;
     flush_type();
-    return rm;
 }
 
 #ifdef WIZARD
@@ -198,22 +194,30 @@ teleport()
 passwd()
 {
     register char *sp, c;
-    char buf[MAXSTR], *xcrypt();
+    char buf[MAXSTR], *crypt();
 
     msg("wizard's Password:");
     mpos = 0;
     sp = buf;
     while ((c = getchar()) != '\n' && c != '\r' && c != ESCAPE)
-	if (c == terminal.c_cc[VKILL])
+#ifndef attron
+	if (c == _tty.sg_kill)
+#else	attron
+	if (c == killchar())
+#endif	attron
 	    sp = buf;
-	else if (c == terminal.c_cc[VERASE] && sp > buf)
+#ifndef attron
+	else if (c == _tty.sg_erase && sp > buf)
+#else	attron
+	else if ((c == erasechar()) && sp > buf)
+#endif	attron
 	    sp--;
 	else
 	    *sp++ = c;
     if (sp == buf)
 	return FALSE;
     *sp = '\0';
-    return (strcmp(PASSWD, xcrypt(buf, "mT")) == 0);
+    return (strcmp("plus5",buf) == 0);
 }
 
 /*

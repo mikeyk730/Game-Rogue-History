@@ -1,17 +1,3 @@
-/*
- * new_level:
- *	Dig and draw a new level
- *
- * @(#)new_level.c	4.19 (Berkeley) 1/12/82
- *
- * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
- * All rights reserved.
- *
- * See the file LICENSE.TXT for full copyright and licensing information.
- */
-
-#include <time.h>
 #include <curses.h>
 #include "rogue.h"
 
@@ -19,14 +5,18 @@
 #define MAXTREAS 10	/* maximum number of treasures in a treasure room */
 #define MINTREAS 2	/* minimum number of treasures in a treasure room */
 
+/*
+ * new_level:
+ *	Dig and draw a new level
+ *
+ * @(#)new_level.c	4.24 (NMT from Berkeley 5.2) 8/25/83
+ */
 new_level()
 {
-    register int rm, i;
+    register int i;
     register THING *tp;
     register char *sp;
     register THING **mp;
-    register int index;
-    coord stairs;
 
     player.t_flags &= ~ISHELD;	/* unhold when you go down just in case */
     if (level > max_level)
@@ -57,21 +47,6 @@ new_level()
     no_food++;
     put_things();			/* Place objects (if any) */
     /*
-     * Place the staircase down.
-     */
-    i = 0;
-    do {
-        rm = rnd_room();
-	rnd_pos(&rooms[rm], &stairs);
-	index = INDEX(stairs.y, stairs.x);
-	if (i++ > 100)
-	{
-	    i = 0;
-	    srand(getpid() + (int) time((time_t *) NULL));
-	}
-    } until (_level[index] == FLOOR);
-    _level[index] = STAIRS;
-    /*
      * Place the traps
      */
     if (rnd(10) < level)
@@ -82,29 +57,35 @@ new_level()
 	i = ntraps;
 	while (i--)
 	{
+	    /*
+	     * not only wouldn't it be NICE to have traps in mazes
+	     * (not that we care about being nice), since the trap
+	     * number is stored where the passage number is, we
+	     * can't actually do it.
+	     */
 	    do
 	    {
-		rm = rnd_room();
-		rnd_pos(&rooms[rm], &stairs);
-		index = INDEX(stairs.y, stairs.x);
-	    } until (_level[index] == FLOOR);
-	    sp = &_flags[index];
+		find_floor((struct room *) NULL, &stairs, FALSE, FALSE);
+	    } while (chat(stairs.y, stairs.x) != FLOOR);
+	    sp = &flat(stairs.y, stairs.x);
 	    *sp &= ~F_REAL;
 	    *sp |= rnd(NTRAPS);
 	}
     }
-    do
-    {
-	rm = rnd_room();
-	rnd_pos(&rooms[rm], &hero);
-	index = INDEX(hero.y, hero.x);
-    } until (_level[index] == FLOOR && (_flags[index] & F_REAL)
-	&& _monst[index] == NULL);
+    /*
+     * Place the staircase down.
+     */
+    i = 0;
+    find_floor((struct room *) NULL, &stairs, FALSE, FALSE);
+    chat(stairs.y, stairs.x) = STAIRS;
+    find_floor((struct room *) NULL, &hero, FALSE, TRUE);
     enter_room(&hero);
     move(hero.y, hero.x);
     addch(PLAYER);
     if (on(player, SEEMONST))
 	turn_see(FALSE);
+    if (on(player, ISTrip))
+	visuals();
 }
 
 /*
@@ -130,8 +111,6 @@ put_things()
 {
     register int i;
     register THING *cur;
-    register int rm;
-    coord tp;
 
     /*
      * Once you have found the amulet, the only way to get new stuff is
@@ -158,12 +137,8 @@ put_things()
 	    /*
 	     * Put it somewhere
 	     */
-	    rm = rnd_room();
-	    do {
-		rnd_pos(&rooms[rm], &tp);
-	    } until (chat(tp.y, tp.x) == FLOOR);
-	    chat(tp.y, tp.x) = cur->o_type;
-	    cur->o_pos = tp;
+	    find_floor((struct room *) NULL, &cur->o_pos, FALSE, FALSE);
+	    chat(cur->o_pos.y, cur->o_pos.x) = cur->o_type;
 	}
     /*
      * If he is really deep in the dungeon and he hasn't found the
@@ -174,19 +149,14 @@ put_things()
 	cur = new_item();
 	attach(lvl_obj, cur);
 	cur->o_hplus = cur->o_dplus = 0;
-	strcpy(cur->o_damage,"0d0");
-	strcpy(cur->o_hurldmg,"0d0");
+	cur->o_damage = cur->o_hurldmg = "0d0";
 	cur->o_ac = 11;
 	cur->o_type = AMULET;
 	/*
 	 * Put it somewhere
 	 */
-	rm = rnd_room();
-	do {
-	    rnd_pos(&rooms[rm], &tp);
-	} until (winat(tp.y, tp.x) == FLOOR);
-	chat(tp.y, tp.x) = AMULET;
-	cur->o_pos = tp;
+	find_floor((struct room *) NULL, &cur->o_pos, FALSE, FALSE);
+	chat(cur->o_pos.y, cur->o_pos.x) = AMULET;
     }
 }
 
@@ -198,7 +168,7 @@ put_things()
 
 treas_room()
 {
-    register int nm, index;
+    register int nm;
     register THING *tp;
     register struct room *rp;
     register int spots, num_monst;
@@ -211,15 +181,11 @@ treas_room()
     num_monst = nm = rnd(spots) + MINTREAS;
     while (nm--)
     {
-	do
-	{
-	    rnd_pos(rp, &mp);
-	    index = INDEX(mp.y, mp.x);
-	} until (_level[index] == FLOOR);
+	find_floor(rp, &mp, 2 * MAXTRIES, FALSE);
 	tp = new_thing();
 	tp->o_pos = mp;
 	attach(lvl_obj, tp);
-	_level[index] = tp->o_type;
+	chat(mp.y, mp.x) = tp->o_type;
     }
 
     /*
@@ -235,13 +201,7 @@ treas_room()
     while (nm--)
     {
 	spots = 0;
-	do
-	{
-	    rnd_pos(rp, &mp);
-	    index = INDEX(mp.y, mp.x);
-	    spots++;
-	} until (_monst[index] == NULL || spots > MAXTRIES);
-	if (_monst[index] == NULL)
+	if (find_floor(rp, &mp, MAXTRIES, TRUE))
 	{
 	    tp = new_item();
 	    new_monster(tp, randmonster(FALSE), &mp);

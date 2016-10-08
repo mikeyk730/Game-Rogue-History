@@ -1,22 +1,12 @@
 /*
  * Read and execute the user commands
  *
- * @(#)command.c	4.31 (Berkeley) 4/6/82
- *
- * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
- * All rights reserved.
- *
- * See the file LICENSE.TXT for full copyright and licensing information.
+ * @(#)command.c	4.34 (NMT from Berkeley 5.2) 8/25/83
  */
 
-#include <stdlib.h>
 #include <curses.h>
 #include <ctype.h>
-#include <stdlib.h>
 #include "rogue.h"
-
-char countch, direction, newcount = FALSE;
 
 /*
  * command:
@@ -26,7 +16,9 @@ command()
 {
     register char ch;
     register int ntimes = 1;			/* Number of player moves */
-    char *unctrol();
+    register char *fp;
+    static char countch, direction, newcount = FALSE;
+    char *unctrl();
 
     if (on(player, ISHASTE))
 	ntimes++;
@@ -41,7 +33,7 @@ command()
 	 * these are illegal things for the player to be, so if any are
 	 * set, someone's been poking in memeory
 	 */
-	if (on(player, ISSLOW|ISCANC|ISGREED|ISINVIS|ISMEAN|ISREGEN))
+	if (on(player, ISSLOW|ISCANC|ISGREED|ISINVIS|ISREGEN))
 	    auto_save();
 
 	look(TRUE);
@@ -110,7 +102,7 @@ command()
 		    case 't': case 'C': case 'I': case '.':
 		    case 'z':
 #ifdef WIZARD
-		    case CTRL('D'): case CTRL('U'):
+		    case CTRL(D): case CTRL(U):
 #endif
 			break;
 		    default:
@@ -119,7 +111,7 @@ command()
 	    }
 	    switch (ch)
 	    {
-		case 'f':
+		when 'f':
 		    if (!on(player, ISBLIND))
 		    {
 			door_stop = TRUE;
@@ -145,7 +137,7 @@ command()
 		count--;
 	    switch (ch)
 	    {
-		case '!' : shell();
+		when '!' : shell();
 		when 'h' : do_move(0, -1);
 		when 'j' : do_move(1, 0);
 		when 'k' : do_move(-1, 0);
@@ -167,7 +159,7 @@ command()
 			after = FALSE;
 		    else
 			missile(delta.y, delta.x);
-		when 'Q' : after = FALSE; quit(-1);
+		when 'Q' : after = FALSE; quit();
 		when 'i' : after = FALSE; inventory(pack, 0);
 		when 'I' : after = FALSE; picky_inven();
 		when 'd' : drop();
@@ -192,8 +184,8 @@ command()
 		    else
 			after = FALSE;
 		when 'D': after = FALSE; discovered();
-		when CTRL('R') : after = FALSE; msg(huh);
-		when CTRL('L') :
+		when CTRL(R) : after = FALSE; msg(huh);
+		when CTRL(L) :
 		    after = FALSE;
 		    clearok(curscr,TRUE);
 		    wrefresh(curscr);
@@ -217,13 +209,18 @@ command()
 		    if (get_dir()) {
 			delta.y += hero.y;
 			delta.x += hero.x;
+			fp = &flat(delta.y, delta.x);
 			if (chat(delta.y, delta.x) != TRAP)
 			    msg("no trap there");
-			else
-			    msg(tr_name(flat(delta.y, delta.x) & F_TMASK));
+			else if (on(player, ISTrip) && !(*fp & F_SEEN))
+			    msg(tr_name(rnd(NTRAPS)));
+			else {
+			    msg(tr_name(*fp & F_TMASK));
+			    *fp |= F_SEEN;
+			}
 		    }
 #ifdef WIZARD
-		when CTRL('P') :
+		when CTRL(P) :
 		    after = FALSE;
 		    if (wizard)
 		    {
@@ -252,26 +249,26 @@ command()
 #ifdef WIZARD
 		    if (wizard) switch (ch)
 		    {
-			case '@' : msg("@ %d,%d", hero.y, hero.x);
+			when '@' : msg("@ %d,%d", hero.y, hero.x);
 			when 'C' : create_obj();
-			when CTRL('I') : inventory(lvl_obj, 0);
-			when CTRL('W') : whatis(FALSE);
-			when CTRL('D') : level++; new_level();
-			when CTRL('U') : if (level > 1) level--; new_level();
-			when CTRL('F') : show_map();
-			when CTRL('T') : teleport();
-			when CTRL('E') : msg("food left: %d", food_left);
-			when CTRL('A') : msg("%d things in your pack", inpack);
-			when CTRL('K') : add_pass();
-			when CTRL('X') : turn_see(on(player, SEEMONST));
-			when CTRL('N') :
+			when CTRL(I) : inventory(lvl_obj, 0);
+			when CTRL(W) : whatis(FALSE);
+			when CTRL(D) : level++; new_level();
+			when CTRL(U) : level--; new_level();
+			when CTRL(F) : show_map();
+			when CTRL(T) : teleport();
+			when CTRL(E) : msg("food left: %d", food_left);
+			when CTRL(A) : msg("%d things in your pack", inpack);
+			when CTRL(C) : add_pass();
+			when CTRL(X) : turn_see(on(player, SEEMONST));
+			when CTRL(N) :
 			{
 			    register THING *item;
 
 			    if ((item = get_item("charge", STICK)) != NULL)
 				item->o_charges = 10000;
 			}
-			when CTRL('H') :
+			when CTRL(H) :
 			{
 			    register int i;
 			    register THING *obj;
@@ -348,7 +345,7 @@ char ch;
 {
     save_msg = FALSE;
     count = 0;
-    msg("illegal command '%s'", unctrol(ch));
+    msg("illegal command '%s'", unctrl(ch));
     save_msg = TRUE;
 }
 
@@ -361,11 +358,13 @@ search()
     register int y, x;
     register char *fp;
     register int ey, ex;
+    register int probinc;
 
     if (on(player, ISBLIND))
 	return;
     ey = hero.y + 1;
     ex = hero.x + 1;
+    probinc = (on(player, ISTrip) ? 3 : 0);
     for (y = hero.y - 1; y <= ey; y++) 
 	for (x = hero.x - 1; x <= ex; x++)
 	{
@@ -377,19 +376,26 @@ search()
 		{
 		    case '|':
 		    case '-':
-			if (rnd(5) != 0)
+			if (rnd(5 + probinc) != 0)
 			    break;
 			chat(y, x) = DOOR;
 			*fp |= F_REAL;
 			count = running = FALSE;
 			break;
 		    case FLOOR:
-			if (rnd(2) != 0)
+			if (rnd(2 + probinc) != 0)
 			    break;
 			chat(y, x) = TRAP;
 			*fp |= F_REAL;
 			count = running = FALSE;
-			msg("%s%s", terse ? "" : "you found ", tr_name(*fp & F_TMASK));
+			if (!terse)
+			    addmsg("you found ");
+			if (on(player, ISTrip))
+			    msg(tr_name(rnd(NTRAPS)));
+			else {
+			    msg(tr_name(*fp & F_TMASK));
+			    *fp |= F_SEEN;
+			}
 			break;
 		}
 	}
@@ -401,7 +407,7 @@ search()
  */
 help()
 {
-    register const struct h_list *strp = helpstr;
+    register struct h_list *strp = helpstr;
     register char helpch;
     register int cnt;
 
@@ -419,13 +425,13 @@ help()
 	{
 	    if (strp->h_ch == helpch)
 	    {
-		msg("%s%s", unctrol(strp->h_ch), strp->h_desc);
+		msg("%s%s", unctrl(strp->h_ch), strp->h_desc);
 		break;
 	    }
 	    strp++;
 	}
 	if (strp->h_ch != helpch)
-	    msg("unknown character '%s'", unctrol(helpch));
+	    msg("unknown character '%s'", unctrl(helpch));
 	return;
     }
     /*
@@ -436,7 +442,7 @@ help()
     cnt = 0;
     while (strp->h_ch)
     {
-	mvwaddstr(hw, cnt % 23, cnt > 22 ? 40 : 0, unctrol(strp->h_ch));
+	mvwaddstr(hw, cnt % 23, cnt > 22 ? 40 : 0, unctrl(strp->h_ch));
 	waddstr(hw, strp->h_desc);
 	cnt++;
 	strp++;
@@ -444,10 +450,7 @@ help()
     wmove(hw, LINES-1, 0);
     wprintw(hw, "--Press space to continue--");
     wrefresh(hw);
-    w_wait_for(hw,' ');
-    wmove(stdscr, 0, 0);
-    wclrtoeol(stdscr);
-    touchwin(stdscr);
+    wait_for(' ');
     clearok(stdscr, TRUE);
     refresh();
 }
@@ -458,8 +461,7 @@ help()
  */
 identify()
 {
-    register char ch;
-    register const char *str;
+    register char ch, *str;
 
     msg("what do you want identified? ");
     ch = readchar();
@@ -494,7 +496,7 @@ identify()
 	when STICK: str = "wand or staff";
 	otherwise: str = "unknown character";
     }
-    msg("'%s': %s", unctrol(ch), str);
+    msg("'%s': %s", unctrl(ch), str);
 }
 
 /*
@@ -508,6 +510,7 @@ d_level()
     else
     {
 	level++;
+	seenstairs = FALSE;
 	new_level();
     }
 }
@@ -540,9 +543,9 @@ u_level()
 call()
 {
     register THING *obj;
-    register char **guess;
-    const char *elsewise;
+    register char **guess, *elsewise;
     register bool *know;
+    char *malloc();
 
     obj = get_item("call", CALLABLE);
     /*
@@ -552,7 +555,7 @@ call()
 	return;
     switch (obj->o_type)
     {
-	case RING:
+	when RING:
 	    guess = r_guess;
 	    know = r_know;
 	    elsewise = (r_guess[obj->o_which] != NULL ?
@@ -589,7 +592,7 @@ call()
     else
 	msg("what do you want to call it? ");
     if (guess[obj->o_which] != NULL)
-	free(guess[obj->o_which]);
+	cfree(guess[obj->o_which]);
     strcpy(prbuf, elsewise);
     if (get_str(prbuf, stdscr) == NORM)
     {

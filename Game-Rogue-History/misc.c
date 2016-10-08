@@ -1,19 +1,12 @@
-/*
- * All sorts of miscellaneous routines
- *
- * @(#)misc.c	4.30 (Berkeley) 4/6/82
- *
- * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
- * All rights reserved.
- *
- * See the file LICENSE.TXT for full copyright and licensing information.
- */
-
-#include <stdlib.h>
 #include <curses.h>
 #include "rogue.h"
 #include <ctype.h>
+
+/*
+ * All sorts of miscellaneous routines
+ *
+ * @(#)misc.c	4.37 (NMT from Berkeley 5.2) 8/25/83
+ */
 
 /*
  * tr_name:
@@ -58,9 +51,7 @@ bool wakeup;
     register int passcount = 0;
     register char pfl, *fp, pch;
     register int sy, sx, sumhero, diffhero;
-    register int oldx, oldy;
 
-    getyx(stdscr, oldy, oldx);
     rp = proom;
     if (!ce(oldpos, hero))
     {
@@ -97,7 +88,7 @@ bool wakeup;
     for (y = sy; y <= ey; y++)
 	if (y > 0 && y < LINES - 1) for (x = sx; x <= ex; x++)
 	{
-	    if (x <= 0 || x >= COLS)
+	    if (x < 0 || x >= COLS)
 		continue;
 	    if (!on(player, ISBLIND))
 	    {
@@ -120,7 +111,27 @@ bool wakeup;
 		else if ((*fp & F_PASS) && (*fp & F_PNUM) != (pfl & F_PNUM))
 		    continue;
 
-	    if ((tp = _monst[index]) != NULL)
+	    if ((tp = _monst[index]) == NULL)
+	    {
+		if (after && on(player, ISTrip))
+			switch (ch)
+			{
+			    case FLOOR:
+			    case ' ':
+			    case PASSAGE:
+			    case '-':
+			    case '|':
+			    case DOOR:
+			    case TRAP:
+				break;
+			    default:
+				if (y != stairs.y || x != stairs.x ||
+				    !seenstairs)
+					ch = rnd_thing();
+				break;
+			}
+	    }
+	    else
 		if (on(player, SEEMONST) && on(*tp, ISINVIS))
 		{
 		    if (door_stop && !firstmove)
@@ -138,15 +149,18 @@ bool wakeup;
 			ch = tp->t_disguise;
 		}
 
-	    move(y, x);
-	    if (ch != inch())
-		addch(ch);
+	    if (tp == NULL || !on(player, ISTrip))
+	    {
+		move(y, x);
+		if (ch != inch())
+		    addch(ch);
+	    }
 
 	    if (door_stop && !firstmove && running)
 	    {
 		switch (runch)
 		{
-		    case 'h':
+		    when 'h':
 			if (x == ex)
 			    continue;
 		    when 'j':
@@ -194,8 +208,11 @@ bool wakeup;
 	}
     if (door_stop && !firstmove && passcount > 1)
 	running = FALSE;
-    move(hero.y, hero.x);
-    addch(PLAYER);
+    if (!running || !jump)
+    {
+	move(hero.y, hero.x);
+	addch(PLAYER);
+    }
 }
 
 /*
@@ -214,8 +231,7 @@ register int y, x;
 		return op;
     }
 #ifdef WIZARD
-	sprintf(prbuf, "Non-object %d,%d", y, x);
-	debug(prbuf);
+    debug(sprintf(prbuf, "Non-object %d,%d", y, x));
     return NULL;
 #else
     /* NOTREACHED */
@@ -241,7 +257,11 @@ eat()
 	return;
     }
     inpack--;
-    
+    if (--obj->o_count < 1)
+    {
+	detach(pack, obj);
+	discard(obj);
+    }
     if (food_left < 0)
 	food_left = 0;
     if ((food_left += HUNGERTIME - 200 + rnd(400)) > STOMACHSIZE)
@@ -255,17 +275,12 @@ eat()
 	if (rnd(100) > 70)
 	{
 	    pstats.s_exp++;
-	    msg("yuk, this food tastes awful");
+	    msg("%s, this food tastes awful",
+		on(player, ISTrip) ? "bummer" : "yuk");
 	    check_level();
 	}
 	else
-	    msg("yum, that tasted good");
-
-	if (--obj->o_count < 1)
-    {
-	detach(pack, obj);
-	discard(obj);
-    }
+	    msg("%s, that tasted good", on(player, ISTrip) ? "oh, wow" : "yum");
 }
 
 /*
@@ -338,7 +353,7 @@ aggravate()
     register THING *mi;
 
     for (mi = mlist; mi != NULL; mi = next(mi))
-	runto(&mi->t_pos, &hero);
+	runto(&mi->t_pos);
 }
 
 /*
@@ -402,7 +417,7 @@ get_dir()
 	gotit = TRUE;
 	switch (readchar())
 	{
-	    case 'h': case'H': delta.y =  0; delta.x = -1;
+	    when 'h': case'H': delta.y =  0; delta.x = -1;
 	    when 'j': case'J': delta.y =  1; delta.x =  0;
 	    when 'k': case'K': delta.y = -1; delta.x =  0;
 	    when 'l': case'L': delta.y =  0; delta.x =  1;
@@ -460,7 +475,7 @@ register char **guess;
 {
     if (know && *guess)
     {
-	free(*guess);
+	cfree(*guess);
 	*guess = NULL;
     }
     else if (!know && askme && *guess == NULL)
@@ -472,4 +487,22 @@ register char **guess;
 	    strcpy(*guess, prbuf);
 	}
     }
+}
+
+/*
+ * rnd_thing:
+ *	Pick a random thing appropriate for this level
+ */
+rnd_thing()
+{
+    register int i;
+    static char thing_list[] = {
+	POTION, SCROLL, RING, STICK, FOOD, WEAPON, ARMOR, STAIRS, AMULET
+    };
+
+    if (level >= AMULETLEVEL)
+        i = rnd(sizeof thing_list / sizeof (char));
+    else
+        i = rnd(sizeof thing_list / sizeof (char) - 1);
+    return thing_list[i];
 }

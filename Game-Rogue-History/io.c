@@ -1,19 +1,12 @@
 /*
  * Various input/output functions
  *
- * @(#)io.c	4.13 (Berkeley) 2/25/82
- *
- * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
- * All rights reserved.
- *
- * See the file LICENSE.TXT for full copyright and licensing information.
+ * @(#)io.c	4.16 (NMT from Berkeley 5.2) 8/25/83
  */
 
 #include <curses.h>
 #include <ctype.h>
 #include "rogue.h"
-#include <stdarg.h>
 
 /*
  * msg:
@@ -23,9 +16,10 @@ static char msgbuf[BUFSIZ];
 static int newpos = 0;
 
 /* VARARGS1 */
-msg(char *fmt, ...)
+msg(fmt, args)
+char *fmt;
+int args;
 {
-	va_list ap;
     /*
      * if the string is "", just clear the line
      */
@@ -39,9 +33,7 @@ msg(char *fmt, ...)
     /*
      * otherwise add to the message and flush it out
      */
-	va_start(ap,fmt);
-    doadd(fmt, ap);
-	va_end(ap);
+    doadd(fmt, &args);
     endmsg();
 }
 
@@ -50,13 +42,11 @@ msg(char *fmt, ...)
  *	Add things to the current message
  */
 /* VARARGS1 */
-addmsg(char *fmt, ...)
+addmsg(fmt, args)
+char *fmt;
+int args;
 {
-	va_list ap;
-
-	va_start(ap, fmt);
-    doadd(fmt, ap);
-	va_end(ap);
+    doadd(fmt, &args);
 }
 
 /*
@@ -93,10 +83,23 @@ endmsg()
  * doadd:
  *	Perform an add onto the message buffer
  */
-
-doadd(char *fmt, va_list ap)
+doadd(fmt, args)
+char *fmt;
+int *args;
 {
-    vsprintf(&msgbuf[newpos], fmt, ap);
+    static FILE junk;
+
+    /*
+     * Do the printf into buf
+     */
+/*    junk._flag = _IOWRT + _IOSTRG; HMS */
+    junk._flag = _IOWRT;
+/*    junk._ptr = &msgbuf[newpos]; HMS */
+    junk._base = junk._ptr = &msgbuf[newpos];
+    junk._cnt = 32767;
+    junk._file = _NFILE;	/* added. HMS */
+    _doprnt(fmt, args, &junk);	/**/
+    putc('\0', &junk);
     newpos = strlen(msgbuf);
 }
 
@@ -119,20 +122,31 @@ step_ok(ch)
 
 /*
  * readchar:
- *	Flushes stdout so that screen is up to date and then returns
- *	getchar().
+ *	Reads and returns a character, checking for gross input errors
  */
 readchar()
 {
-    fflush(stdout);
-    return( getch() );
+    register int cnt;
+    char c;
+
+    cnt = 0;
+    while (read(0, &c, 1) <= 0)
+	if (cnt++ > 100)	/* if we are getting infinite EOFs */
+	    auto_save();	/* save the game */
+    return c;
 }
 
+/*
+ * unctrl:
+ *	Print a readable version of a certain character
+ */
 char *
-unctrol(ch)
+unctrl(ch)
 char ch;
 {
-    return( unctrl(ch) );
+    extern char *_unctrl[];		/* Defined in curses library */
+
+    return _unctrl[ch&0177];
 }
 
 /*
@@ -192,26 +206,16 @@ status()
  * wait_for
  *	Sit around until the guy types the right key
  */
-
-
-
 wait_for(ch)
-register char ch;
-{
-    w_wait_for(stdscr, ch);
-}
-
-w_wait_for(win,ch)
-WINDOW *win;
 register char ch;
 {
     register char c;
 
     if (ch == '\n')
-        while ((c = wgetch(win)) != '\n' && c != '\r')
+        while ((c = readchar()) != '\n' && c != '\r')
 	    continue;
     else
-        while (wgetch(win) != ch)
+        while (readchar() != ch)
 	    continue;
 }
 
@@ -227,7 +231,9 @@ char *message;
     touchwin(scr);
     wmove(scr, hero.y, hero.x);
     wrefresh(scr);
-    w_wait_for(scr,' ');
+    wait_for(' ');
     clearok(curscr, TRUE);
+#ifdef	attron
     touchwin(stdscr);
+#endif	attron
 }
