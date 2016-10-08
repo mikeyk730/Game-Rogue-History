@@ -1,110 +1,87 @@
-
 /*
  * Read a scroll and let it happen
  *
- * @(#)scrolls.c	3.5 (Berkeley) 6/15/81
+ * @(#)scrolls.c	4.21 (Berkeley) 4/6/82
  *
  * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
  * All rights reserved.
  *
  * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
-#include "curses.h"
-#include <stdlib.h>
+#include <curses.h>
 #include <ctype.h>
-#include <string.h>
 #include "rogue.h"
 
+/*
+ * read_scroll:
+ *	Read a scroll from the pack and do the appropriate thing
+ */
 read_scroll()
 {
-    register struct object *obj;
-    register struct linked_list *item;
-    register struct room *rp;
-    register int i,j;
-    register char ch, nch;
-    register struct linked_list *titem;
-    char buf[80];
+    register THING *obj;
+    register int y, x;
+    register char ch;
+    register THING *op;
+    register int index;
+    register bool discardit = FALSE;
 
-    item = get_item("read", SCROLL);
-    if (item == NULL)
+    obj = get_item("read", SCROLL);
+    if (obj == NULL)
 	return;
-    obj = (struct object *) ldata(item);
     if (obj->o_type != SCROLL)
     {
 	if (!terse)
-	    msg("There is nothing on it to read");
+	    msg("there is nothing on it to read");
 	else
-	    msg("Nothing to read");
+	    msg("nothing to read");
 	return;
     }
-    msg("As you read the scroll, it vanishes.");
+    msg("as you read the scroll, it vanishes");
     /*
      * Calculate the effect it has on the poor guy.
      */
     if (obj == cur_weapon)
 	cur_weapon = NULL;
-    switch(obj->o_which)
+    switch (obj->o_which)
     {
 	case S_CONFUSE:
 	    /*
 	     * Scroll of monster confusion.  Give him that power.
 	     */
-	    msg("Your hands begin to glow red");
 	    player.t_flags |= CANHUH;
-	when S_LIGHT:
-	    s_know[S_LIGHT] = TRUE;
-	    if ((rp = roomin(&hero)) == NULL)
-		msg("The corridor glows and then fades");
-	    else
-	    {
-		addmsg("The room is lit");
-		if (!terse)
-		    addmsg(" by a shimmering blue light.");
-		endmsg();
-		rp->r_flags &= ~ISDARK;
-		/*
-		 * Light the room and put the player back up
-		 */
-		light(&hero);
-		mvwaddch(cw, hero.y, hero.x, PLAYER);
-	    }
+	    msg("your hands begin to glow red");
 	when S_ARMOR:
 	    if (cur_armor != NULL)
 	    {
-		msg("Your armor glows faintly for a moment");
 		cur_armor->o_ac--;
 		cur_armor->o_flags &= ~ISCURSED;
+		msg("your armor glows faintly for a moment");
 	    }
 	when S_HOLD:
 	    /*
 	     * Hold monster scroll.  Stop all monsters within two spaces
 	     * from chasing after the hero.
 	     */
-	    {
-		register int x,y;
-		register struct linked_list *mon;
 
-		for (x = hero.x-2; x <= hero.x+2; x++)
-		    for (y = hero.y-2; y <= hero.y+2; y++)
-			if (y > 0 && x > 0 && isupper(mvwinch(mw, y, x)))
-			    if ((mon = find_mons(y, x)) != NULL)
+	    for (x = hero.x - 2; x <= hero.x + 2; x++)
+		if (x >= 0 && x < COLS)
+		    for (y = hero.y - 2; y <= hero.y + 2; y++)
+			if (y >= 0 && y <= LINES - 1)
+			    if ((op = moat(y, x)) != NULL)
 			    {
-				register struct thing *th;
-
-				th = (struct thing *) ldata(mon);
-				th->t_flags &= ~ISRUN;
-				th->t_flags |= ISHELD;
+				op->t_flags &= ~ISRUN;
+				op->t_flags |= ISHELD;
 			    }
-	    }
 	when S_SLEEP:
 	    /*
 	     * Scroll which makes you fall asleep
 	     */
 	    s_know[S_SLEEP] = TRUE;
-	    msg("You fall asleep.");
-	    no_command += 4 + rnd(SLEEPTIME);
+	    no_command += rnd(SLEEPTIME) + 4;
+	    player.t_flags &= ~ISRUN;
+	    msg("you fall asleep");
 	when S_CREATE:
 	    /*
 	     * Create a monster
@@ -112,15 +89,14 @@ read_scroll()
 	     * otherwise give up
 	     */
 	    {
-		register int x, y;
 		register bool appear = 0;
 		coord mp;
 
 		/*
 		 * Search for an open place
 		 */
-		for (y = hero.y-1; y <= hero.y+1; y++)
-		    for (x = hero.x-1; x <= hero.x+1; x++)
+		for (y = hero.y - 1; y <= hero.y + 1; y++)
+		    for (x = hero.x - 1; x <= hero.x + 1; x++)
 		    {
 			/*
 			 * Don't put a monster in top of the player.
@@ -130,8 +106,11 @@ read_scroll()
 			/*
 			 * Or anything else nasty
 			 */
-			if (step_ok(winat(y, x)))
+			if (step_ok(ch = winat(y, x)))
 			{
+			    if (ch == SCROLL
+				&& find_obj(y, x)->o_which == S_SCARE)
+				    continue;
 			    if (rnd(++appear) == 0)
 			    {
 				mp.y = y;
@@ -141,123 +120,106 @@ read_scroll()
 		    }
 		if (appear)
 		{
-		    titem = new_item(sizeof (struct thing));
-		    new_monster(titem, randmonster(FALSE), &mp);
+		    op = new_item();
+		    new_monster(op, randmonster(FALSE), &mp);
 		}
 		else
-		    msg("You hear a faint cry of anguish in the distance.");
+		    msg("you hear a faint cry of anguish in the distance");
 	    }
 	when S_IDENT:
 	    /*
 	     * Identify, let the rogue figure something out
 	     */
-	    msg("This scroll is an identify scroll");
 	    s_know[S_IDENT] = TRUE;
-	    whatis();
+	    msg("this scroll is an identify scroll");
+	    whatis(TRUE);
 	when S_MAP:
 	    /*
 	     * Scroll of magic mapping.
 	     */
 	    s_know[S_MAP] = TRUE;
-	    msg("Oh, now this scroll has a map on it.");
-	    overwrite(stdscr, hw);
+	    msg("oh, now this scroll has a map on it");
 	    /*
 	     * Take all the things we want to keep hidden out of the window
 	     */
-	    for (i = 0; i < LINES; i++)
-		for (j = 0; j < COLS; j++)
+	    for (y = 1; y < LINES - 1; y++)
+		for (x = 0; x < COLS; x++)
 		{
-		    switch (nch = ch = mvwinch(hw, i, j))
+		    index = INDEX(y, x);
+		    switch (ch = _level[index])
 		    {
-			case SECRETDOOR:
-                            nch = DOOR;
-			    mvaddch(i, j, nch);
 			case '-':
 			case '|':
-			case DOOR:
-			case PASSAGE:
-			case ' ':
-			case STAIRS:
-			    if (mvwinch(mw, i, j) != ' ')
+			    if (!(_flags[index] & F_REAL))
 			    {
-				register struct thing *it;
-
-				it = (struct thing *) ldata(find_mons(i, j));
-				if ((it != NULL) && (it->t_oldch == ' '))
-				    it->t_oldch = nch;
+				ch = _level[index] = DOOR;
+				_flags[index] &= ~F_REAL;
 			    }
+			case PASSAGE:
+			    _flags[index] |= F_SEEN;
+			case DOOR:
+			case STAIRS:
+			    if ((op = moat(y, x)) != NULL)
+				if (op->t_oldch == ' ')
+				    op->t_oldch = ch;
 			    break;
 			default:
-			    nch = ' ';
+			    ch = ' ';
 		    }
-		    if (nch != ch)
-			waddch(hw, nch);
+		    if (ch != ' ')
+			mvaddch(y, x, ch);
 		}
-	    /*
-	     * Copy in what he has discovered
-	     */
-	    overlay(cw, hw);
-	    /*
-	     * And set up for display
-	     */
-	    overwrite(hw, cw);
 	when S_GFIND:
 	    /*
 	     * Potion of gold detection
 	     */
+	    ch = FALSE;
+	    wclear(hw);
+	    for (op = lvl_obj; op != NULL; op = next(op))
+		if (op->o_type == GOLD)
+		{
+		    ch = TRUE;
+		    mvwaddch(hw, op->o_pos.y, op->o_pos.x, GOLD);
+		}
+	    if (ch)
 	    {
-		int gtotal = 0;
-
-		wclear(hw);
-		for (i = 0; i < MAXROOMS; i++)
-		{
-		    gtotal += rooms[i].r_goldval;
-		    if (rooms[i].r_goldval != 0 &&
-			mvwinch(stdscr, rooms[i].r_gold.y, rooms[i].r_gold.x)
-			== GOLD)
-			mvwaddch(hw,rooms[i].r_gold.y,rooms[i].r_gold.x,GOLD);
-		}
-		if (gtotal)
-		{
-		    s_know[S_GFIND] = TRUE;
-		    show_win(hw,
-			"You begin to feel greedy and you sense gold.--More--");
-		}
-		else msg("You begin to feel a pull downward");
+		s_know[S_GFIND] = TRUE;
+		show_win(hw,
+		    "You begin to feel greedy and you sense gold.--More--");
 	    }
+	    else
+		msg("you feel a pull downward");
 	when S_TELEP:
 	    /*
 	     * Scroll of teleportation:
 	     * Make him dissapear and reappear
 	     */
 	    {
-		int rm;
-		struct room *cur_room;
+		register struct room *cur_room;
 
-		cur_room = roomin(&hero);
-		rm = teleport();
-		if (cur_room != &rooms[rm])
+		cur_room = proom;
+		teleport();
+		if (cur_room != proom)
 		    s_know[S_TELEP] = TRUE;
 	    }
 	when S_ENCH:
-	    if (cur_weapon == NULL)
-		msg("You feel a strange sense of loss.");
+	    if (cur_weapon == NULL || cur_weapon->o_type != WEAPON)
+		msg("you feel a strange sense of loss");
 	    else
 	    {
 		cur_weapon->o_flags &= ~ISCURSED;
-		if (rnd(100) > 50)
+		if (rnd(2) == 0)
 		    cur_weapon->o_hplus++;
 		else
 		    cur_weapon->o_dplus++;
-		msg("Your %s glows blue for a moment.", w_names[cur_weapon->o_which]);
+		msg("your %s glows blue for a moment", w_names[cur_weapon->o_which]);
 	    }
 	when S_SCARE:
 	    /*
-	     * A monster will refuse to step on a scare monster scroll
-	     * if it is dropped.  Thus reading it is a mistake and produces
-	     * laughter at the poor rogue's boo boo.
+	     * Reading it is a mistake and produces laughter at the
+	     * poor rogue's boo boo.
 	     */
-	    msg("You hear maniacal laughter in the distance.");
+	    msg("you hear maniacal laughter in the distance");
 	when S_REMOVE:
 	    if (cur_armor != NULL)
 		cur_armor->o_flags &= ~ISCURSED;
@@ -267,41 +229,26 @@ read_scroll()
 		cur_ring[LEFT]->o_flags &= ~ISCURSED;
 	    if (cur_ring[RIGHT] != NULL)
 		cur_ring[RIGHT]->o_flags &= ~ISCURSED;
-	    msg("You feel as if somebody is watching over you.");
+	    msg("you feel as if somebody is watching over you");
 	when S_AGGR:
 	    /*
 	     * This scroll aggravates all the monsters on the current
 	     * level and sets them running towards the hero
 	     */
 	    aggravate();
-	    msg("You hear a high pitched humming noise.");
+	    msg("you hear a high pitched humming noise");
 	when S_NOP:
-	    msg("This scroll seems to be blank.");
+	    msg("this scroll seems to be blank");
 	when S_GENOCIDE:
-	    msg("You have been granted the boon of genocide");
-	    genocide();
 	    s_know[S_GENOCIDE] = TRUE;
+	    msg("you have been granted the boon of genocide");
+	    genocide();
 	otherwise:
-	    msg("What a puzzling scroll!");
+	    msg("what a puzzling scroll!");
 	    return;
     }
     look(TRUE);	/* put the result of the scroll on the screen */
     status();
-    if (s_know[obj->o_which] && s_guess[obj->o_which])
-    {
-	free(s_guess[obj->o_which]);
-	s_guess[obj->o_which] = NULL;
-    }
-    else if (!s_know[obj->o_which] && askme && s_guess[obj->o_which] == NULL)
-    {
-	msg(terse ? "Call it: " : "What do you want to call it? ");
-	if (get_str(buf, cw) == NORM)
-	{
-	    s_guess[obj->o_which] = malloc((unsigned int) strlen(buf) + 1);
-	    if (s_guess[obj->o_which] != NULL)
-		strcpy(s_guess[obj->o_which], buf);
-	}
-    }
     /*
      * Get rid of the thing
      */
@@ -310,7 +257,12 @@ read_scroll()
 	obj->o_count--;
     else
     {
-	detach(pack, item);
-        discard(item);
+	detach(pack, obj);
+	discardit = TRUE;
     }
+
+    call_it(s_know[obj->o_which], &s_guess[obj->o_which]);
+
+    if (discardit)
+	discard(obj);
 }

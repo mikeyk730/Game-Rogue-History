@@ -1,27 +1,25 @@
 /*
  * Functions for dealing with linked lists of goodies
  *
- * @(#)list.c	3.3 (Berkeley) 6/15/81
+ * @(#)list.c	4.7 (Berkeley) 12/19/81
  *
  * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
  * All rights reserved.
  *
  * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
-#include "curses.h"
 #include <stdlib.h>
-#include <string.h>
+#include <curses.h>
 #include "rogue.h"
 
 /*
  * detach:
  *	Takes an item out of whatever linked list it might be in
  */
-
 _detach(list, item)
-register struct linked_list **list, *item;
+register THING **list, *item;
 {
     if (*list == item)
 	*list = next(item);
@@ -35,9 +33,8 @@ register struct linked_list **list, *item;
  * _attach:
  *	add an item to the head of a list
  */
-
 _attach(list, item)
-register struct linked_list **list, *item;
+register THING **list, *item;
 {
     if (*list != NULL)
     {
@@ -50,7 +47,6 @@ register struct linked_list **list, *item;
 	item->l_next = NULL;
 	item->l_prev = NULL;
     }
-
     *list = item;
 }
 
@@ -58,11 +54,10 @@ register struct linked_list **list, *item;
  * _free_list:
  *	Throw the whole blamed thing away
  */
-
 _free_list(ptr)
-register struct linked_list **ptr;
+register THING **ptr;
 {
-    register struct linked_list *item;
+    register THING *item;
 
     while (*ptr != NULL)
     {
@@ -74,48 +69,28 @@ register struct linked_list **ptr;
 
 /*
  * discard:
- *	free up an item
+ *	Free up an item
  */
-
 discard(item)
-register struct linked_list *item;
+register THING *item;
 {
-    total -= 2;
-    FREE(item->l_data);
-    FREE(item);
+    total--;
+    free((char *) item);
 }
 
 /*
  * new_item
- *	get a new item with a specified size
+ *	Get a new item with a specified size
  */
-
-struct linked_list *
-new_item(size)
-int size;
+THING *
+new_item()
 {
-    register struct linked_list *item;
+    register THING *item;
 
-    if ((item = (struct linked_list *) new(sizeof *item)) == NULL)
-	msg("Ran out of memory for header after %d items", total);
-    if ((item->l_data = new(size)) == NULL)
-	msg("Ran out of memory for data after %d items", total);
+    if ((item = calloc(1, sizeof *item)) == NULL)
+	msg("ran out of memory after %d items", total);
+    else
+	total++;
     item->l_next = item->l_prev = NULL;
-    memset(item->l_data,0,size);
     return item;
-}
-
-char *
-new(size)
-int size;
-{
-    register char *space = ALLOC(size);
-
-    if (space == NULL)
-    {
-	sprintf(prbuf, "Rogue ran out of memory (%d).  Fatal error!", md_memused());
-        fatal(prbuf);
-    }
-    total++;
-    return space;
 }

@@ -3,33 +3,40 @@
  * Special wizard commands (some of which are also non-wizard commands
  * under strange circumstances)
  *
- * @(#)wizard.c	3.8 (Berkeley) 6/3/81
- *
- * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
- * All rights reserved.
- *
- * See the file LICENSE.TXT for full copyright and licensing information.
+ * @(#)wizard.c	4.14 (Berkeley) 1/26/82
  */
 
-#include "curses.h"
+#include <curses.h>
+#include <termios.h>
 #include <ctype.h>
-#include <string.h>
 #include "rogue.h"
+
+extern struct termios terminal;
 
 /*
  * whatis:
  *	What a certin object is
  */
-
-whatis()
+whatis(insist)
+bool insist;
 {
-    register struct object *obj;
-    register struct linked_list *item;
+    register THING *obj;
 
-    if ((item = get_item("identify", 0)) == NULL)
+    if (pack == NULL)
+    {
+	msg("You don't have anything in your pack to identify");
 	return;
-    obj = (struct object *) ldata(item);
+    }
+
+    for (;;)
+	if ((obj = get_item("identify", 0)) == NULL && insist)
+	    msg("You must identify something");
+	else
+	    break;
+
+    if (!insist && obj == NULL)
+	return;
+
     switch (obj->o_type)
     {
         case SCROLL:
@@ -69,49 +76,45 @@ whatis()
     msg(inv_name(obj, FALSE));
 }
 
+#ifdef WIZARD
 /*
  * create_obj:
  *	Wizard command for getting anything he wants
  */
-
 create_obj()
 {
-    register struct linked_list *item;
-    register struct object *obj;
+    register THING *obj;
     register char ch, bless;
 
-    item = new_item(sizeof *obj);
-    obj = (struct object *) ldata(item);
-    msg("Type of item: ");
-    obj->o_type = readchar(cw);
+    obj = new_item();
+    msg("type of item: ");
+    obj->o_type = readchar();
     mpos = 0;
-    msg("Which %c do you want? (0-f)", obj->o_type);
-    obj->o_which = (isdigit((ch = readchar(cw))) ? ch - '0' : ch - 'a' + 10);
+    msg("which %c do you want? (0-f)", obj->o_type);
+    obj->o_which = (isdigit((ch = readchar())) ? ch - '0' : ch - 'a' + 10);
     obj->o_group = 0;
     obj->o_count = 1;
     mpos = 0;
     if (obj->o_type == WEAPON || obj->o_type == ARMOR)
     {
-	msg("Blessing? (+,-,n)");
-	bless = readchar(cw);
+	msg("blessing? (+,-,n)");
+	bless = readchar();
 	mpos = 0;
+	if (bless == '-')
+	    obj->o_flags |= ISCURSED;
 	if (obj->o_type == WEAPON)
 	{
 	    init_weapon(obj, obj->o_which);
-	    if (bless == '-') {
+	    if (bless == '-')
 		obj->o_hplus -= rnd(3)+1;
-		obj->o_flags |= ISCURSED;
-	    }
 	    if (bless == '+')
 		obj->o_hplus += rnd(3)+1;
 	}
 	else
 	{
 	    obj->o_ac = a_class[obj->o_which];
-	    if (bless == '-') {
+	    if (bless == '-')
 		obj->o_ac += rnd(3)+1;
-		obj->o_flags |= ISCURSED;
-	    }
 	    if (bless == '+')
 		obj->o_ac -= rnd(3)+1;
 	}
@@ -123,38 +126,54 @@ create_obj()
 	    case R_ADDSTR:
 	    case R_ADDHIT:
 	    case R_ADDDAM:
-		msg("Blessing? (+,-,n)");
-		bless = readchar(cw);
+		msg("blessing? (+,-,n)");
+		bless = readchar();
 		mpos = 0;
 		if (bless == '-')
 		    obj->o_flags |= ISCURSED;
 		obj->o_ac = (bless == '-' ? -1 : rnd(2) + 1);
+	    when R_AGGR:
+	    case R_TELEPORT:
+		obj->o_flags |= ISCURSED;
 	}
     else if (obj->o_type == STICK)
 	fix_stick(obj);
-    add_pack(item, FALSE);
+    else if (obj->o_type == GOLD)
+    {
+	msg("how much?");
+	get_num(&obj->o_goldval, stdscr);
+    }
+    add_pack(obj, FALSE);
 }
+#endif
 
 /*
  * telport:
  *	Bamf the hero someplace else
  */
-
 teleport()
 {
     register int rm;
     coord c;
 
-    c = hero;
-    mvwaddch(cw, hero.y, hero.x, mvwinch(stdscr, hero.y, hero.x));
+    mvaddch(hero.y, hero.x, chat(hero.y, hero.x));
     do
     {
 	rm = rnd_room();
-	rnd_pos(&rooms[rm], &hero);
-    } until(winat(hero.y, hero.x) == FLOOR);
-    light(&c);
-    light(&hero);
-    mvwaddch(cw, hero.y, hero.x, PLAYER);
+	rnd_pos(&rooms[rm], &c);
+    } until (step_ok(winat(c.y, c.x)));
+    if (&rooms[rm] != proom)
+    {
+	leave_room(&hero);
+	hero = c;
+	enter_room(&hero);
+    }
+    else
+    {
+	hero = c;
+	look(TRUE);
+    }
+    mvaddch(hero.y, hero.x, PLAYER);
     /*
      * turn off ISHELD in case teleportation was done while fighting
      * a Fungi
@@ -164,29 +183,30 @@ teleport()
 	fung_hit = 0;
 	strcpy(monsters['F'-'A'].m_stats.s_dmg, "000d0");
     }
+    no_move = 0;
     count = 0;
     running = FALSE;
-    flush_type();		/* flush typeahead */
+    flush_type();
     return rm;
 }
 
+#ifdef WIZARD
 /*
  * passwd:
- *	see if user knows password
+ *	See if user knows password
  */
-
 passwd()
 {
     register char *sp, c;
-    char buf[80], *xcrypt();
+    char buf[MAXSTR], *xcrypt();
 
-    msg("Wizard's Password:");
+    msg("wizard's Password:");
     mpos = 0;
     sp = buf;
-    while ((c = readchar(cw)) != '\n' && c != '\r' && c != '\033')
-	if (c == md_killchar())
+    while ((c = getchar()) != '\n' && c != '\r' && c != ESCAPE)
+	if (c == terminal.c_cc[VKILL])
 	    sp = buf;
-	else if (c == md_erasechar() && sp > buf)
+	else if (c == terminal.c_cc[VERASE] && sp > buf)
 	    sp--;
 	else
 	    *sp++ = c;
@@ -195,3 +215,26 @@ passwd()
     *sp = '\0';
     return (strcmp(PASSWD, xcrypt(buf, "mT")) == 0);
 }
+
+/*
+ * show_map:
+ *	Print out the map for the wizard
+ */
+show_map()
+{
+    register int y, x, real;
+
+    wclear(hw);
+    for (y = 1; y < LINES - 1; y++)
+	for (x = 0; x < COLS; x++)
+	{
+	    if (!(real = flat(y, x) & F_REAL))
+		wstandout(hw);
+	    wmove(hw, y, x);
+	    waddch(hw, chat(y, x));
+	    if (!real)
+		wstandend(hw);
+	}
+    show_win(hw, "---More (level map)---");
+}
+#endif

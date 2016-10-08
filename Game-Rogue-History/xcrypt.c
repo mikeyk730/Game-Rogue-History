@@ -1,7 +1,7 @@
 /*
  * FreeSec: libcrypt
  *
- * Copyright (C) 1994 David Burren
+ * Copyright (c) 1994 David Burren
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -12,14 +12,14 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name(s) of the author(s) nor the names of other contributors
+ * 4. Neither the name of the author nor the names of other contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR(S) AND CONTRIBUTORS ``AS IS'' AND
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR(S) OR CONTRIBUTORS BE LIABLE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
  * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
@@ -50,11 +50,13 @@
  */
 
 #include <sys/types.h>
+#include <sys/param.h>
+#include <pwd.h>
 #include <string.h>
 
-extern unsigned long int md_ntohl(unsigned long int x);
-extern unsigned long int md_htonl(unsigned long int x);
-
+#ifdef DEBUG
+# include <stdio.h>
+#endif
 #define _PASSWORD_EFMT1 '_'
 
 static unsigned char	IP[64] = {
@@ -181,7 +183,8 @@ static unsigned char	ascii64[] =
 /*	  0123456789012345678901234567890123456789012345678901234567890123 */
 
 static __inline int
-ascii_to_bin(char ch)
+ascii_to_bin(ch)
+	char ch;
 {
 	if (ch > 'z')
 		return(0);
@@ -328,7 +331,8 @@ des_init()
 }
 
 static void
-setup_salt(int salt)
+setup_salt(salt)
+	int salt;
 {
 	unsigned int	obit, saltbit;
 	int	i;
@@ -349,7 +353,8 @@ setup_salt(int salt)
 }
 
 static int
-des_setkey(const unsigned char *key)
+des_setkey(key)
+	const char *key;
 {
 	unsigned int k0, k1, rawkey0, rawkey1;
 	int	shifts, round;
@@ -357,8 +362,8 @@ des_setkey(const unsigned char *key)
 	if (!des_initialised)
 		des_init();
 
-	rawkey0 = md_ntohl(*(unsigned int *) key);
-	rawkey1 = md_ntohl(*(unsigned int *) (key + 4));
+	rawkey0 = ntohl(*(unsigned int *) key);
+	rawkey1 = ntohl(*(unsigned int *) (key + 4));
 
 	if ((rawkey0 | rawkey1)
 	    && rawkey0 == old_rawkey0
@@ -429,14 +434,15 @@ des_setkey(const unsigned char *key)
 }
 
 static int
-do_des(unsigned int l_in, unsigned int r_in, unsigned int *l_out, 
-       unsigned int *r_out, int count)
+do_des(l_in, r_in, l_out, r_out, count)
+	unsigned int l_in, r_in, *l_out, *r_out;
+	int count;
 {
 	/*
 	 *	l_in, r_in, l_out, and r_out are in pseudo-"big-endian" format.
 	 */
 	unsigned int	l, r, *kl, *kr, *kl1, *kr1;
-	unsigned int	f = 0, r48l, r48r;
+	unsigned int	f, r48l, r48r;
 	int		round;
 
 	if (count == 0) {
@@ -546,7 +552,11 @@ do_des(unsigned int l_in, unsigned int r_in, unsigned int *l_out,
 }
 
 static int
-des_cipher(const unsigned char *in, unsigned char *out, int salt, int count)
+des_cipher(in, out, salt, count)
+	const char *in;
+	char *out;
+	int salt;
+	int count;
 {
 	unsigned int l_out, r_out, rawl, rawr;
 	unsigned int x[2];
@@ -558,18 +568,20 @@ des_cipher(const unsigned char *in, unsigned char *out, int salt, int count)
 	setup_salt(salt);
 
 	memcpy(x, in, sizeof x);
-	rawl = md_ntohl(x[0]);
-	rawr = md_ntohl(x[1]);
+	rawl = ntohl(x[0]);
+	rawr = ntohl(x[1]);
 	retval = do_des(rawl, rawr, &l_out, &r_out, count);
 
-	x[0] = md_htonl(l_out);
-	x[1] = md_htonl(r_out);
+	x[0] = htonl(l_out);
+	x[1] = htonl(r_out);
 	memcpy(out, x, sizeof x);
 	return(retval);
 }
 
 char *
-xcrypt(const char *key, const char *setting)
+xcrypt(key, setting)
+	const char *key;
+	const char *setting;
 {
 	int		i;
 	unsigned int	count, salt, l, r0, r1, keybuf[2];

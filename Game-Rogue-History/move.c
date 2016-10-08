@@ -1,16 +1,16 @@
 /*
  * Hero movement commands
  *
- * @(#)move.c	3.26 (Berkeley) 6/15/81
+ * @(#)move.c	4.24 (Berkeley) 5/12/82
  *
  * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
  * All rights reserved.
  *
  * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
-#include "curses.h"
+#include <curses.h>
 #include <ctype.h>
 #include "rogue.h"
 
@@ -24,7 +24,6 @@ coord nh;
  * do_run:
  *	Start the hero running
  */
-
 do_run(ch)
 char ch;
 {
@@ -38,26 +37,34 @@ char ch;
  *	Check to see that a move is legal.  If it is handle the
  * consequences (fighting, picking up, etc.)
  */
-
 do_move(dy, dx)
 int dy, dx;
 {
-    register char ch;
+    register char ch, fl;
 
     firstmove = FALSE;
     if (no_move)
     {
 	no_move--;
-	msg("You are still stuck in the bear trap");
+	msg("you are still stuck in the bear trap");
 	return;
     }
     /*
      * Do a confused move (maybe)
      */
-    if (rnd(100) < 80 && on(player, ISHUH))
+    if (on(player, ISHUH) && rnd(5) != 0)
+    {
 	nh = *rndmove(&player);
+	if (ce(nh, hero))
+	{
+	    after = FALSE;
+	    running = FALSE;
+	    return;
+	}
+    }
     else
     {
+over:
 	nh.y = hero.y + dy;
 	nh.x = hero.x + dx;
     }
@@ -66,8 +73,9 @@ int dy, dx;
      * Check if he tried to move off the screen or make an illegal
      * diagonal move, and stop him if he did.
      */
-    if (nh.x < 0 || nh.x > COLS-1 || nh.y < 0 || nh.y > LINES - 1
-	|| !diag_ok(&hero, &nh))
+    if (nh.x < 0 || nh.x > COLS-1 || nh.y < 1 || nh.y > LINES - 2)
+	goto hit_bound;
+    if (!diag_ok(&hero, &nh))
     {
 	after = FALSE;
 	running = FALSE;
@@ -75,311 +83,276 @@ int dy, dx;
     }
     if (running && ce(hero, nh))
 	after = running = FALSE;
+    fl = flat(nh.y, nh.x);
     ch = winat(nh.y, nh.x);
+    if (!(fl & F_REAL) && ch == FLOOR)
+    {
+	chat(nh.y, nh.x) = ch = TRAP;
+	flat(nh.y, nh.x) |= F_REAL;
+    }
+    else
     if (on(player, ISHELD) && ch != 'F')
     {
-	msg("You are being held");
+	msg("you are being held");
 	return;
     }
-    switch(ch)
+    switch (ch)
     {
 	case ' ':
 	case '|':
 	case '-':
-	case SECRETDOOR:
+hit_bound:
+	    if (passgo && running && (proom->r_flags & ISGONE)
+		&& !on(player, ISBLIND))
+	    {
+		register bool	b1, b2;
+
+		switch (runch)
+		{
+		    case 'h':
+		    case 'l':
+			b1 = (((flat(hero.y - 1, hero.x) & F_PASS) || chat(hero.y - 1, hero.x) == DOOR) && hero.y != 1);
+			b2 = (((flat(hero.y + 1, hero.x) & F_PASS) || chat(hero.y + 1, hero.x) == DOOR) && hero.y != LINES - 2);
+			if (!(b1 ^ b2))
+			    break;
+			if (b1)
+			{
+			    runch = 'k';
+			    dy = -1;
+			}
+			else
+			{
+			    runch = 'j';
+			    dy = 1;
+			}
+			dx = 0;
+			turnref();
+			goto over;
+		    case 'j':
+		    case 'k':
+			b1 = (((flat(hero.y, hero.x - 1) & F_PASS) || chat(hero.y, hero.x - 1) == DOOR) && hero.x != 0);
+			b2 = (((flat(hero.y, hero.x + 1) & F_PASS) || chat(hero.y, hero.x + 1) == DOOR) && hero.x != COLS - 1);
+			if (!(b1 ^ b2))
+			    break;
+			if (b1)
+			{
+			    runch = 'h';
+			    dx = -1;
+			}
+			else
+			{
+			    runch = 'l';
+			    dx = 1;
+			}
+			dy = 0;
+			turnref();
+			goto over;
+		}
+	    }
 	    after = running = FALSE;
-	    return;
+	    break;
+	case DOOR:
+	    running = FALSE;
+	    if (flat(hero.y, hero.x) & F_PASS)
+		enter_room(&nh);
+	    goto move_stuff;
 	case TRAP:
 	    ch = be_trapped(&nh);
-	    if (ch == TRAPDOOR || ch == TELTRAP)
+	    if (ch == T_DOOR || ch == T_TELEP)
 		return;
 	    goto move_stuff;
-	case GOLD:
-	case POTION:
-	case SCROLL:
-	case FOOD:
-	case WEAPON:
-	case ARMOR:
-	case RING:
-	case AMULET:
-	case STICK:
-	    running = FALSE;
-	    take = ch;
+	case PASSAGE:
+	    goto move_stuff;
+	case FLOOR:
+	    if (!(fl & F_REAL))
+		be_trapped(&hero);
+	    goto move_stuff;
 	default:
-move_stuff:
-	    if (ch == PASSAGE && winat(hero.y, hero.x) == DOOR)
-		light(&hero);
-	    else if (ch == DOOR)
-	    {
-		running = FALSE;
-		if (winat(hero.y, hero.x) == PASSAGE)
-		    light(&nh);
-	    }
-	    else if (ch == STAIRS)
-		running = FALSE;
-	    else if (isupper(ch))
-	    {
-		running = FALSE;
+	    running = FALSE;
+	    if (isupper(ch) || moat(nh.y, nh.x))
 		fight(&nh, ch, cur_weapon, FALSE);
-		return;
+	    else
+	    {
+		running = FALSE;
+		if (ch != STAIRS)
+		    take = ch;
+move_stuff:
+		mvaddch(hero.y, hero.x, chat(hero.y, hero.x));
+		if ((fl & F_PASS) && chat(oldpos.y, oldpos.x) == DOOR)
+		    leave_room(&nh);
+		hero = nh;
 	    }
-	    ch = winat(hero.y, hero.x);
-	    wmove(cw, unc(hero));
-	    waddch(cw, ch);
-	    hero = nh;
-	    wmove(cw, unc(hero));
-	    waddch(cw, PLAYER);
     }
 }
 
 /*
- * Called to illuminate a room.
- * If it is dark, remove anything that might move.
+ * turnref:
+ *	Decide whether to refresh at a passage turning or not
  */
-
-light(cp)
-coord *cp;
+turnref()
 {
-    register struct room *rp;
-    register int j, k;
-    register char ch, rch;
-    register struct linked_list *item;
+    register int index;
 
-    if ((rp = roomin(cp)) != NULL && !on(player, ISBLIND))
+    index = INDEX(hero.y, hero.x);
+    if (!(_flags[index] & F_SEEN))
     {
-	for (j = 0; j < rp->r_max.y; j++)
+	if (jump)
 	{
-	    for (k = 0; k < rp->r_max.x; k++)
+	    leaveok(stdscr, TRUE);
+	    refresh();
+	    leaveok(stdscr, FALSE);
+	}
+	_flags[index] |= F_SEEN;
+    }
+}
+
+/*
+ * door_open:
+ *	Called to illuminate a room.  If it is dark, remove anything
+ *	that might move.
+ */
+door_open(rp)
+struct room *rp;
+{
+    register int j, k;
+    register char ch;
+    register THING *item;
+
+    if (!(rp->r_flags & ISGONE) && !on(player, ISBLIND))
+	for (j = rp->r_pos.y; j < rp->r_pos.y + rp->r_max.y; j++)
+	    for (k = rp->r_pos.x; k < rp->r_pos.x + rp->r_max.x; k++)
 	    {
-		ch = show(rp->r_pos.y + j, rp->r_pos.x + k);
-		wmove(cw, rp->r_pos.y + j, rp->r_pos.x + k);
-		/*
-		 * Figure out how to display a secret door
-		 */
-		if (ch == SECRETDOOR)
-		{
-		    if (j == 0 || j == rp->r_max.y - 1)
-			ch = '-';
-		    else
-			ch = '|';
-		}
-		/*
-		 * If the room is a dark room, we might want to remove
-		 * monsters and the like from it (since they might
-		 * move)
-		 */
+		ch = winat(j, k);
+		move(j, k);
 		if (isupper(ch))
 		{
-		    item = wake_monster(rp->r_pos.y+j, rp->r_pos.x+k);
-		    if (((struct thing *) ldata(item))->t_oldch == ' ')
-			if (!(rp->r_flags & ISDARK))
-			    ((struct thing *) ldata(item))->t_oldch =
-				mvwinch(stdscr, rp->r_pos.y+j, rp->r_pos.x+k);
+		    item = wake_monster(j, k);
+		    if (item->t_oldch == ' ' && !(rp->r_flags & ISDARK)
+			&& !on(player, ISBLIND))
+			    item->t_oldch = chat(j, k);
 		}
-		if (rp->r_flags & ISDARK)
-		{
-		    rch = mvwinch(cw, rp->r_pos.y+j, rp->r_pos.x+k);
-		    switch (rch)
-		    {
-			case DOOR:
-			case STAIRS:
-			case TRAP:
-			case '|':
-			case '-':
-			case ' ':
-			    ch = rch;
-			when FLOOR:
-			    ch = (on(player, ISBLIND) ? FLOOR : ' ');
-			otherwise:
-			    ch = ' ';
-		    }
-		}
-		mvwaddch(cw, rp->r_pos.y+j, rp->r_pos.x+k, ch);
 	    }
-	}
-    }
-}
-
-/*
- * show:
- *	returns what a certain thing will display as to the un-initiated
- */
-
-show(y, x)
-register int y, x;
-{
-    register char ch = winat(y, x);
-    register struct linked_list *it;
-    register struct thing *tp;
-
-    if (ch == TRAP)
-	return (trap_at(y, x)->tr_flags & ISFOUND) ? TRAP : FLOOR;
-    else if (ch == 'M' || ch == 'I')
-    {
-	if ((it = find_mons(y, x)) == NULL)
-	    fatal("Can't find monster in show");
-	tp = (struct thing *) ldata(it);
-	if (ch == 'M')
-	    ch = tp->t_disguise;
-	/*
-	 * Hide invisible monsters
-	 */
-	else if (off(player, CANSEE))
-	    ch = mvwinch(stdscr, y, x);
-    }
-    return ch;
 }
 
 /*
  * be_trapped:
  *	The guy stepped on a trap.... Make him pay.
  */
-
 be_trapped(tc)
 register coord *tc;
 {
-    register struct trap *tp;
-    register char ch;
+    register char tr;
+    register int index;
 
-    tp = trap_at(tc->y, tc->x);
     count = running = FALSE;
-    mvwaddch(cw, tp->tr_pos.y, tp->tr_pos.x, TRAP);
-    tp->tr_flags |= ISFOUND;
-    switch (ch = tp->tr_type)
+    index = INDEX(tc->y, tc->x);
+    _level[index] = TRAP;
+    tr = _flags[index] & F_TMASK;
+    switch (tr)
     {
-	case TRAPDOOR:
+	case T_DOOR:
 	    level++;
 	    new_level();
-	    msg("You fell into a trap!");
-	when BEARTRAP:
+	    msg("you fell into a trap!");
+	when T_BEAR:
 	    no_move += BEARTIME;
-	    msg("You are caught in a bear trap");
-	when SLEEPTRAP:
+	    msg("you are caught in a bear trap");
+	when T_SLEEP:
 	    no_command += SLEEPTIME;
-	    msg("A strange white mist envelops you and you fall asleep");
-	when ARROWTRAP:
+	    player.t_flags &= ~ISRUN;
+	    msg("a strange white mist envelops you and you fall asleep");
+	when T_ARROW:
 	    if (swing(pstats.s_lvl-1, pstats.s_arm, 1))
 	    {
-		msg("Oh no! An arrow shot you");
-		if ((pstats.s_hpt -= roll(1, 6)) <= 0)
+		pstats.s_hpt -= roll(1, 6);
+		if (pstats.s_hpt <= 0)
 		{
-		    msg("The arrow killed you.");
+		    msg("an arrow killed you");
 		    death('a');
 		}
+		else
+		    msg("oh no! An arrow shot you");
 	    }
 	    else
 	    {
-		register struct linked_list *item;
-		register struct object *arrow;
+		register THING *arrow;
 
-		msg("An arrow shoots past you.");
-		item = new_item(sizeof *arrow);
-		arrow = (struct object *) ldata(item);
+		arrow = new_item();
 		arrow->o_type = WEAPON;
 		arrow->o_which = ARROW;
 		init_weapon(arrow, ARROW);
 		arrow->o_count = 1;
 		arrow->o_pos = hero;
-		arrow->o_hplus = arrow->o_dplus = 0; /* "arrow bug" FIX */
-		fall(item, FALSE);
+		arrow->o_hplus = arrow->o_dplus = 0;
+		fall(arrow, FALSE);
+		msg("an arrow shoots past you");
 	    }
-	when TELTRAP:
+	when T_TELEP:
 	    teleport();
-	when DARTTRAP:
+	    mvaddch(tc->y, tc->x, TRAP); /* since the hero's leaving, look()
+					    won't put it on for us */
+	when T_DART:
 	    if (swing(pstats.s_lvl+1, pstats.s_arm, 1))
 	    {
-		msg("A small dart just hit you in the shoulder");
-		if ((pstats.s_hpt -= roll(1, 4)) <= 0)
+		pstats.s_hpt -= roll(1, 4);
+		if (pstats.s_hpt <= 0)
 		{
-		    msg("The dart killed you.");
+		    msg("a poisoned dart killed you");
 		    death('d');
 		}
-		if (!ISWEARING(R_SUSTSTR))
+		if (!ISWEARING(R_SUSTSTR) && !save(VS_POISON))
 		    chg_str(-1);
+		msg("a small dart just hit you in the shoulder");
 	    }
 	    else
-		msg("A small dart whizzes by your ear and vanishes.");
+		msg("a small dart whizzes by your ear and vanishes");
     }
-    flush_type();	/* flush typeahead */
-    return(ch);
-}
-
-/*
- * trap_at:
- *	find the trap at (y,x) on screen.
- */
-
-struct trap *
-trap_at(y, x)
-register int y, x;
-{
-    register struct trap *tp, *ep;
-
-    ep = &traps[ntraps];
-    for (tp = traps; tp < ep; tp++)
-	if (tp->tr_pos.y == y && tp->tr_pos.x == x)
-	    break;
-    if (tp == ep)
-    {
-	sprintf(prbuf, "Trap at %d,%d not in array", y, x);
-	fatal(prbuf);
-    }
-    return tp;
+    flush_type();
+    return tr;
 }
 
 /*
  * rndmove:
- *	move in a random direction if the monster/person is confused
+ *	Move in a random direction if the monster/person is confused
  */
-
 coord *
 rndmove(who)
-struct thing *who;
+THING *who;
 {
     register int x, y;
     register char ch;
-    register int ex, ey, nopen = 0;
-    register struct linked_list *item;
-    register struct object *obj;
+    register THING *obj;
     static coord ret;  /* what we will be returning */
-    static coord dest;
 
-    ret = who->t_pos;
+    y = ret.y = who->t_pos.y + rnd(3) - 1;
+    x = ret.x = who->t_pos.x + rnd(3) - 1;
     /*
-     * Now go through the spaces surrounding the player and
-     * set that place in the array to true if the space can be
-     * moved into
+     * Now check to see if that's a legal move.  If not, don't move.
+     * (I.e., bump into the wall or whatever)
      */
-    ey = ret.y + 1;
-    ex = ret.x + 1;
-    for (y = who->t_pos.y - 1; y <= ey; y++)
-	if (y >= 0 && y < LINES)
-	    for (x = who->t_pos.x - 1; x <= ex; x++)
-	    {
-		if (x < 0 || x >= COLS)
-		    continue;
-		ch = winat(y, x);
-		if (step_ok(ch))
-		{
-		    dest.y = y;
-		    dest.x = x;
-		    if (!diag_ok(&who->t_pos, &dest))
-			continue;
-		    if (ch == SCROLL)
-		    {
-			item = NULL;
-			for (item = lvl_obj; item != NULL; item = next(item))
-			{
-			    obj = (struct object *) ldata(item);
-			    if (y == obj->o_pos.y && x == obj->o_pos.x)
-				break;
-			}
-			if (item != NULL && obj->o_which == S_SCARE)
-			    continue;
-		    }
-		    if (rnd(++nopen) == 0)
-			ret = dest;
-		}
-	    }
+    if (y == who->t_pos.y && x == who->t_pos.x)
+	return &ret;
+    if ((y < 0 || y >= LINES - 1) || (x < 0 || x >= COLS))
+	goto bad;
+    else if (!diag_ok(&who->t_pos, &ret))
+	goto bad;
+    else
+    {
+	ch = winat(y, x);
+	if (!step_ok(ch))
+	    goto bad;
+	if (ch == SCROLL)
+	{
+	    for (obj = lvl_obj; obj != NULL; obj = next(obj))
+		if (y == obj->o_pos.y && x == obj->o_pos.x)
+		    break;
+	    if (obj != NULL && obj->o_which == S_SCARE)
+		goto bad;
+	}
+    }
+    return &ret;
+
+bad:
+    ret = who->t_pos;
     return &ret;
 }

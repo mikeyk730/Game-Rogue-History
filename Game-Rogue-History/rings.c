@@ -1,41 +1,39 @@
 /*
- * routines dealing specifically with rings
+ * Routines dealing specifically with rings
  *
- * @(#)rings.c	3.17 (Berkeley) 6/15/81
+ * @(#)rings.c	4.13 (Berkeley) 1/28/82
  *
  * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
  * All rights reserved.
  *
  * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
-#include "curses.h"
-#include <stdlib.h>
-#include <string.h>
+#include <curses.h>
 #include "rogue.h"
 
+/*
+ * ring_on:
+ *	Put a ring on a hand
+ */
 ring_on()
 {
-    register struct object *obj;
-    register struct linked_list *item;
+    register THING *obj;
     register int ring;
-    str_t save_max;
-    char buf[80];
 
-    item = get_item("put on", RING);
+    obj = get_item("put on", RING);
     /*
      * Make certain that it is somethings that we want to wear
      */
-    if (item == NULL)
+    if (obj == NULL)
 	return;
-    obj = (struct object *) ldata(item);
     if (obj->o_type != RING)
     {
 	if (!terse)
-	    msg("It would be difficult to wrap that around a finger");
+	    msg("it would be difficult to wrap that around a finger");
 	else
-	    msg("Not a ring");
+	    msg("not a ring");
 	return;
     }
 
@@ -57,9 +55,9 @@ ring_on()
     else
     {
 	if (!terse)
-	    msg("You already have a ring on each hand");
+	    msg("you already have a ring on each hand");
 	else
-	    msg("Wearing two");
+	    msg("wearing two");
 	return;
     }
     cur_ring[ring] = obj;
@@ -70,50 +68,37 @@ ring_on()
     switch (obj->o_which)
     {
 	case R_ADDSTR:
-	    save_max = max_stats.s_str;
 	    chg_str(obj->o_ac);
-	    max_stats.s_str = save_max;
 	    break;
 	case R_SEEINVIS:
-	    player.t_flags |= CANSEE;
-	    light(&hero);
-	    mvwaddch(cw, hero.y, hero.x, PLAYER);
+	    invis_on();
 	    break;
 	case R_AGGR:
 	    aggravate();
 	    break;
     }
-    status();
-    if (r_know[obj->o_which] && r_guess[obj->o_which])
-    {
-	free(r_guess[obj->o_which]);
-	r_guess[obj->o_which] = NULL;
-    }
-    else if (!r_know[obj->o_which] && askme && r_guess[obj->o_which] == NULL)
-    {
-	mpos = 0;
-	msg(terse ? "Call it: " : "What do you want to call it? ");
-	if (get_str(buf, cw) == NORM)
-	{
-	    r_guess[obj->o_which] = malloc((unsigned int) strlen(buf) + 1);
-	    if (r_guess[obj->o_which] != NULL)
-		strcpy(r_guess[obj->o_which], buf);
-	}
-	msg("");
-    }
+
+    if (!terse)
+	addmsg("you are now wearing ");
+    msg("%s (%c)", inv_name(obj, TRUE), pack_char(obj));
 }
 
+/*
+ * ring_off:
+ *	Take off a ring
+ */
 ring_off()
 {
     register int ring;
-    register struct object *obj;
+    register THING *obj;
+    register char packchar;
 
     if (cur_ring[LEFT] == NULL && cur_ring[RIGHT] == NULL)
     {
 	if (terse)
-	    msg("No rings");
+	    msg("no rings");
 	else
-	    msg("You aren't wearing any rings");
+	    msg("you aren't wearing any rings");
 	return;
     }
     else if (cur_ring[LEFT] == NULL)
@@ -127,13 +112,18 @@ ring_off()
     obj = cur_ring[ring];
     if (obj == NULL)
     {
-	msg("Not wearing such a ring");
+	msg("not wearing such a ring");
 	return;
     }
+    packchar = pack_char(obj);
     if (dropcheck(obj))
-	msg("Was wearing %s", inv_name(obj, TRUE));
+	msg("was wearing %s(%c)", inv_name(obj, TRUE), packchar);
 }
 
+/*
+ * gethand:
+ *	Which hand is the hero interested in?
+ */
 gethand()
 {
     register int c;
@@ -141,25 +131,26 @@ gethand()
     for (;;)
     {
 	if (terse)
-	    msg("Left or Right ring? ");
+	    msg("left or right ring? ");
 	else
-	    msg("Left hand or right hand? ");
-	if ((c = readchar(cw)) == 'l' || c == 'L')
+	    msg("left hand or right hand? ");
+	if ((c = readchar()) == ESCAPE)
+	    return -1;
+	mpos = 0;
+	if (c == 'l' || c == 'L')
 	    return LEFT;
 	else if (c == 'r' || c == 'R')
 	    return RIGHT;
-	else if (c == ESCAPE)
-	    return -1;
-	mpos = 0;
 	if (terse)
 	    msg("L or R");
 	else
-	    msg("Please type L or R");
+	    msg("please type L or R");
     }
 }
 
 /*
- * how much food does this ring use up?
+ * ring_eat:
+ *	How much food does this ring use up?
  */
 ring_eat(hand)
 register int hand;
@@ -171,22 +162,31 @@ register int hand;
 	case R_REGEN:
 	    return 2;
 	case R_SUSTSTR:
+	case R_SUSTARM:
+	case R_PROTECT:
+	case R_ADDSTR:
+	case R_STEALTH:
 	    return 1;
 	case R_SEARCH:
-	    return (rnd(100) < 33);
+	case R_ADDHIT:
+	case R_ADDDAM:
+	    return (rnd(3) == 0);
 	case R_DIGEST:
-	    return -(rnd(100) < 50);
+	    return -rnd(2);
+	case R_SEEINVIS:
+	    return (rnd(5) == 0);
 	default:
 	    return 0;
     }
 }
 
 /*
- * print ring bonuses
+ * ring_num:
+ *	Print ring bonuses
  */
 char *
 ring_num(obj)
-register struct object *obj;
+register THING *obj;
 {
     static char buf[5];
 
@@ -199,7 +199,7 @@ register struct object *obj;
 	case R_ADDDAM:
 	case R_ADDHIT:
 	    buf[0] = ' ';
-	    strcpy(&buf[1], num(obj->o_ac, 0));
+	    strcpy(&buf[1], num(obj->o_ac, 0, RING));
 	otherwise:
 	    return "";
     }

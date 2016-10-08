@@ -1,41 +1,41 @@
 /*
  * Routines to deal with the pack
  *
- * @(#)pack.c	3.6 (Berkeley) 6/15/81
+ * @(#)pack.c	4.15 (Berkeley) 4/6/82
  *
  * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
  * All rights reserved.
  *
  * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
-#include "curses.h"
+#include <curses.h>
 #include <ctype.h>
 #include "rogue.h"
 
 /*
  * add_pack:
- *	Pick up an object and add it to the pack.  If the argument is non-null
- * use it as the linked_list pointer instead of gettting it off the ground.
+ *	Pick up an object and add it to the pack.  If the argument is
+ *	non-null use it as the linked_list pointer instead of gettting
+ *	it off the ground.
  */
-add_pack(item, silent)
-register struct linked_list *item;
+add_pack(obj, silent)
+register THING *obj;
 bool silent;
 {
-    register struct linked_list *ip, *lp;
-    register struct object *obj, *op;
+    register THING *op, *lp;
     register bool exact, from_floor;
+    register char floor;
 
-    if (item == NULL)
+    if (obj == NULL)
     {
 	from_floor = TRUE;
-	if ((item = find_obj(hero.y, hero.x)) == NULL)
+	if ((obj = find_obj(hero.y, hero.x)) == NULL)
 	    return;
     }
     else
 	from_floor = FALSE;
-    obj = (struct object *) ldata(item);
     /*
      * Link it into the pack.  Search the pack for a object of similar type
      * if there isn't one, stuff it at the beginning, if there is, look for one
@@ -45,11 +45,13 @@ bool silent;
      * to see if there is something in thr same group and if there is then
      * increment the count.
      */
+/*    floor = (proom->r_flags & ISGONE) ? PASSAGE : FLOOR; */
+    if (proom) floor = (proom->r_flags & ISGONE) ? PASSAGE : FLOOR;
+    else floor = FLOOR;
     if (obj->o_group)
     {
-	for (ip = pack; ip != NULL; ip = next(ip))
+	for (op = pack; op != NULL; op = next(op))
 	{
-	    op = (struct object *) ldata(ip);
 	    if (op->o_group == obj->o_group)
 	    {
 		/*
@@ -58,12 +60,12 @@ bool silent;
 		op->o_count++;
 		if (from_floor)
 		{
-		    detach(lvl_obj, item);
-		    mvaddch(hero.y, hero.x,
-			(roomin(&hero) == NULL ? PASSAGE : FLOOR));
+		    detach(lvl_obj, obj);
+		    mvaddch(hero.y, hero.x, floor);
+		    chat(hero.y, hero.x) = floor;
 		}
-		discard(item);
-		item = ip;
+		discard(obj);
+		obj = op;
 		goto picked_up;
 	    }
 	}
@@ -73,7 +75,7 @@ bool silent;
      */
     if (inpack == MAXPACK-1)
     {
-	msg("You can't carry anything else.");
+	msg("you can't carry anything else");
 	return;
     }
     /*
@@ -82,9 +84,10 @@ bool silent;
     if (obj->o_type == SCROLL && obj->o_which == S_SCARE)
 	if (obj->o_flags & ISFOUND)
 	{
-	    msg("The scroll turns to dust as you pick it up.");
-	    detach(lvl_obj, item);
-	    mvaddch(hero.y, hero.x, FLOOR);
+	    detach(lvl_obj, obj);
+	    mvaddch(hero.y, hero.x, floor);
+	    chat(hero.y, hero.x) = floor;
+	    msg("the scroll turns to dust as you pick it up");
 	    return;
 	}
 	else
@@ -93,30 +96,27 @@ bool silent;
     inpack++;
     if (from_floor)
     {
-	detach(lvl_obj, item);
-	mvaddch(hero.y, hero.x, (roomin(&hero) == NULL ? PASSAGE : FLOOR));
+	detach(lvl_obj, obj);
+	mvaddch(hero.y, hero.x, floor);
+	chat(hero.y, hero.x) = floor;
     }
     /*
      * Search for an object of the same type
      */
     exact = FALSE;
-    for (ip = pack; ip != NULL; ip = next(ip))
-    {
-	op = (struct object *) ldata(ip);
+    for (op = pack; op != NULL; op = next(op))
 	if (obj->o_type == op->o_type)
 	    break;
-    }
-    if (ip == NULL)
+    if (op == NULL)
     {
 	/*
 	 * Put it at the end of the pack since it is a new type
 	 */
-	for (ip = pack; ip != NULL; ip = next(ip))
+	for (op = pack; op != NULL; op = next(op))
 	{
-	    op = (struct object *) ldata(ip);
 	    if (op->o_type != FOOD)
 		break;
-	    lp = ip;
+	    lp = op;
 	}
     }
     else
@@ -124,31 +124,30 @@ bool silent;
 	/*
 	 * Search for an object which is exactly the same
 	 */
-	while (ip != NULL && op->o_type == obj->o_type)
+	while (op->o_type == obj->o_type)
 	{
 	    if (op->o_which == obj->o_which)
 	    {
 		exact = TRUE;
 		break;
 	    }
-	    lp = ip;
-	    if ((ip = next(ip)) == NULL)
+	    lp = op;
+	    if ((op = next(op)) == NULL)
 		break;
-	    op = (struct object *) ldata(ip);
 	}
     }
-    if (ip == NULL)
+    if (op == NULL)
     {
 	/*
 	 * Didn't find an exact match, just stick it here
 	 */
 	if (pack == NULL)
-	    pack = item;
+	    pack = obj;
 	else
 	{
-	    lp->l_next = item;
-	    item->l_prev = lp;
-	    item->l_next = NULL;
+	    lp->l_next = obj;
+	    obj->l_prev = lp;
+	    obj->l_next = NULL;
 	}
     }
     else
@@ -160,108 +159,73 @@ bool silent;
 	if (exact && ISMULT(obj->o_type))
 	{
 	    op->o_count++;
-	    discard(item);
-	    item = ip;
+	    discard(obj);
+	    obj = op;
 	    goto picked_up;
 	}
-	if ((item->l_prev = prev(ip)) != NULL)
-	    item->l_prev->l_next = item;
+	if ((obj->l_prev = prev(op)) != NULL)
+	    obj->l_prev->l_next = obj;
 	else
-	    pack = item;
-	item->l_next = ip;
-	ip->l_prev = item;
+	    pack = obj;
+	obj->l_next = op;
+	op->l_prev = obj;
     }
 picked_up:
     /*
-     * Notify the user
+     * If this was the object of something's desire, that monster will
+     * get mad and run at the hero
      */
-    obj = (struct object *) ldata(item);
-    if (notify && !silent)
-    {
-	if (!terse)
-	    addmsg("You now have ");
-	msg("%s (%c)", inv_name(obj, !terse), pack_char(obj));
-    }
+    for (op = mlist; op != NULL; op = next(op))
+	if (op->t_dest = &obj->o_pos)
+	    op->t_dest = &hero;
+
     if (obj->o_type == AMULET)
 	amulet = TRUE;
+    /*
+     * Notify the user
+     */
+    if (!silent)
+    {
+	if (!terse)
+	    addmsg("you now have ");
+	msg("%s (%c)", inv_name(obj, !terse), pack_char(obj));
+    }
 }
 
 /*
  * inventory:
- *	list what is in the pack
+ *	List what is in the pack
  */
 inventory(list, type)
-struct linked_list *list;
+THING *list;
 int type;
 {
-    register struct object *obj;
     register char ch;
     register int n_objs;
-    char inv_temp[80];
+    char inv_temp[MAXSTR];
 
     n_objs = 0;
     for (ch = 'a'; list != NULL; ch++, list = next(list))
     {
-	obj = (struct object *) ldata(list);
-	if (type && type != obj->o_type && !(type == CALLABLE &&
-	    (obj->o_type == SCROLL || obj->o_type == POTION ||
-	     obj->o_type == RING || obj->o_type == STICK)))
+	if (type && type != list->o_type && !(type == CALLABLE &&
+	    (list->o_type == SCROLL || list->o_type == POTION ||
+	     list->o_type == RING || list->o_type == STICK)))
 		continue;
-	switch (n_objs++)
-	{
-	    /*
-	     * For the first thing in the inventory, just save the string
-	     * in case there is only one.
-	     */
-	    case 0:
-		sprintf(inv_temp, "%c) %s", ch, inv_name(obj, FALSE));
-		break;
-	    /*
-	     * If there is more than one, clear the screen, print the
-	     * saved message and fall through to ...
-	     */
-	    case 1:
-		if (slow_invent)
-		    msg(inv_temp);
-		else
-		{
-		    wclear(hw);
-		    waddstr(hw, inv_temp);
-		    waddch(hw, '\n');
-		}
-	    /*
-	     * Print the line for this object
-	     */
-	    default:
-		if (slow_invent)
-		    msg("%c) %s", ch, inv_name(obj, FALSE));
-		else
-		    wprintw(hw, "%c) %s\n", ch, inv_name(obj, FALSE));
-	}
+	n_objs++;
+	sprintf(inv_temp, "%c) %%s", ch);
+	add_line(inv_temp, inv_name(list, FALSE));
     }
     if (n_objs == 0)
     {
 	if (terse)
-	    msg(type == 0 ? "Empty handed." :
-			    "Nothing appropriate");
+	    msg(type == 0 ? "empty handed" :
+			    "nothing appropriate");
 	else
-	    msg(type == 0 ? "You are empty handed." :
-			    "You don't have anything appropriate");
+	    msg(type == 0 ? "you are empty handed" :
+			    "you don't have anything appropriate");
 	return FALSE;
     }
-    if (n_objs == 1)
-    {
-	msg(inv_temp);
-	return TRUE;
-    }
-    if (!slow_invent)
-    {
-	mvwaddstr(hw, LINES-1, 0, "--Press space to continue--");
-	draw(hw);
-	wait_for(hw,' ');
-	clearok(cw, TRUE);
-	touchwin(cw);
-    }
+    end_line();
     return TRUE;
 }
 
@@ -272,13 +236,22 @@ int type;
 pick_up(ch)
 char ch;
 {
-    switch(ch)
+    register THING *obj;
+
+    switch (ch)
     {
 	case GOLD:
-	    money();
+	    if ((obj = find_obj(hero.y, hero.x)) == NULL)
+		return;
+	    money(obj->o_goldval);
+	    detach(lvl_obj, obj);
+	    discard(obj);
+	    proom->r_goldval = 0;
 	    break;
 	default:
-	    debug("Where did you pick that up???");
+#ifdef WIZARD
+	    debug("Where did you pick a '%s' up???", unctrol(ch));
+#endif
 	case ARMOR:
 	case POTION:
 	case FOOD:
@@ -298,59 +271,59 @@ char ch;
  */
 picky_inven()
 {
-    register struct linked_list *item;
+    register THING *obj;
     register char ch, mch;
 
     if (pack == NULL)
-	msg("You aren't carrying anything");
+	msg("you aren't carrying anything");
     else if (next(pack) == NULL)
-	msg("a) %s", inv_name((struct object *) ldata(pack), FALSE));
+	msg("a) %s", inv_name(pack, FALSE));
     else
     {
-	msg(terse ? "Item: " : "Which item do you wish to inventory: ");
+	msg(terse ? "item: " : "which item do you wish to inventory: ");
 	mpos = 0;
-	if ((mch = readchar(cw)) == ESCAPE)
+	if ((mch = readchar()) == ESCAPE)
 	{
 	    msg("");
 	    return;
 	}
-	for (ch = 'a', item = pack; item != NULL; item = next(item), ch++)
+	for (ch = 'a', obj = pack; obj != NULL; obj = next(obj), ch++)
 	    if (ch == mch)
 	    {
-		msg("%c) %s",ch,inv_name((struct object *) ldata(item), FALSE));
+		msg("%c) %s",ch,inv_name(obj, FALSE));
 		return;
 	    }
 	if (!terse)
-	    msg("'%s' not in pack", unctrl(mch));
-	msg("Range is 'a' to '%c'", --ch);
+	    msg("'%s' not in pack", unctrol(mch));
+	msg("range is 'a' to '%c'", --ch);
     }
 }
 
 /*
  * get_item:
- *	pick something out of a pack for a purpose
+ *	Pick something out of a pack for a purpose
  */
-struct linked_list *
+THING *
 get_item(purpose, type)
 char *purpose;
 int type;
 {
-    register struct linked_list *obj;
+    register THING *obj;
     register char ch, och;
 
     if (pack == NULL)
-	msg("You aren't carrying anything.");
+	msg("you aren't carrying anything");
     else
     {
 	for (;;)
 	{
 	    if (!terse)
-		addmsg("Which object do you want to ");
+		addmsg("which object do you want to ");
 	    addmsg(purpose);
 	    if (terse)
 		addmsg(" what");
 	    msg("? (* for list): ");
-	    ch = readchar(cw);
+	    ch = readchar();
 	    mpos = 0;
 	    /*
 	     * Give the poor player a chance to abort the command
@@ -376,7 +349,7 @@ int type;
 		    break;
 	    if (obj == NULL)
 	    {
-		msg("Please specify a letter between 'a' and '%c'", och-1);
+		msg("please specify a letter between 'a' and '%c'", och-1);
 		continue;
 	    }
 	    else 
@@ -386,17 +359,42 @@ int type;
     return NULL;
 }
 
+/*
+ * pack_char:
+ *	Return which character would address a pack object
+ */
 pack_char(obj)
-register struct object *obj;
+register THING *obj;
 {
-    register struct linked_list *item;
+    register THING *item;
     register char c;
 
     c = 'a';
     for (item = pack; item != NULL; item = next(item))
-	if ((struct object *) ldata(item) == obj)
+	if (item == obj)
 	    return c;
 	else
 	    c++;
-    return 'z';
+    return '?';
+}
+
+/*
+ * money:
+ *	Add or subtract gold from the pack
+ */
+money(value)
+register int value;
+{
+    register char floor;
+
+    floor = (proom->r_flags & ISGONE) ? PASSAGE : FLOOR;
+    purse += value;
+    mvaddch(hero.y, hero.x, floor);
+    chat(hero.y, hero.x) = floor;
+    if (value > 0)
+    {
+	if (!terse)
+	    addmsg("you found ");
+	msg("%d gold pieces", value);
+    }
 }

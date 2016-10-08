@@ -1,74 +1,53 @@
 /*
  * Functions for dealing with problems brought about by weapons
  *
- * @(#)weapons.c	3.17 (Berkeley) 6/15/81
+ * @(#)weapons.c	4.14 (Berkeley) 4/6/82
  *
  * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
  * All rights reserved.
  *
  * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
-#include "curses.h"
+#include <curses.h>
 #include <ctype.h>
-#include <string.h>
 #include "rogue.h"
 
 #define NONE 100
 
-char *w_names[MAXWEAPONS] = {
-    "mace",
-    "long sword",
-    "short bow",
-    "arrow",
-    "dagger",
-    "rock",
-    "two handed sword",
-    "sling",
-    "dart",
-    "crossbow",
-    "crossbow bolt",
-    "spear",
-};
-
 static struct init_weps {
-    char *iw_dam;
-    char *iw_hrl;
-    char iw_launch;
-    int iw_flags;
+    char *iw_dam;	/* Damage when wielded */
+    char *iw_hrl;	/* Damage when thrown */
+    char iw_launch;	/* Launching weapon */
+    int iw_flags;	/* Miscellaneous flags */
 } init_dam[MAXWEAPONS] = {
-    "2d4", "1d3", NONE, 0,		/* Mace */
-    "1d10", "1d2", NONE,0,		/* Long sword */
-    "1d1", "1d1", NONE,	0,		/* Bow */
-    "1d1", "1d6", BOW,	ISMANY|ISMISL,	/* Arrow */
-    "1d6", "1d4", NONE,	ISMISL,		/* Dagger */
-    "1d2", "1d4", SLING,ISMANY|ISMISL,	/* Rock */
-    "3d6", "1d2", NONE,	0,		/* 2h sword */
-    "0d0", "0d0", NONE, 0,		/* Sling */
-    "1d1", "1d3", NONE,	ISMANY|ISMISL,	/* Dart */
-    "1d1", "1d1", NONE, 0,		/* Crossbow */
-    "1d2", "1d10", CROSSBOW, ISMANY|ISMISL,/* Crossbow bolt */
-    "1d8", "1d6", NONE, ISMISL,		/* Spear */
+    "2d4",	"1d3",	NONE, 		0,		/* Mace */
+    "3d4",	"1d2",	NONE,		0,		/* Long sword */
+    "1d1",	"1d1",	NONE,		0,		/* Bow */
+    "1d1",	"2d3",	BOW,		ISMANY|ISMISL,	/* Arrow */
+    "1d6",	"1d4",	NONE,		ISMISL,		/* Dagger */
+    "4d4",	"1d2",	NONE,		0,		/* 2h sword */
+    "1d1",	"1d3",	NONE,		ISMANY|ISMISL,	/* Dart */
+    "1d1",	"1d1",	NONE,		0,		/* Crossbow */
+    "1d2",	"2d5",	CROSSBOW,	ISMANY|ISMISL,	/* Crossbow bolt */
+    "2d3",	"1d6",	NONE,		ISMISL,		/* Spear */
 };
 
 /*
  * missile:
  *	Fire a missile in a given direction
  */
-
 missile(ydelta, xdelta)
 int ydelta, xdelta;
 {
-    register struct object *obj;
-    register struct linked_list *item, *nitem;
+    register THING *obj, *nitem;
 
     /*
      * Get which thing we are hurling
      */
-    if ((item = get_item("throw", WEAPON)) == NULL)
+    if ((obj = get_item("throw", WEAPON)) == NULL)
 	return;
-    obj = (struct object *) ldata(item);
     if (!dropcheck(obj) || is_current(obj))
 	return;
     /*
@@ -78,7 +57,7 @@ int ydelta, xdelta;
      */
     if (obj->o_count < 2)
     {
-	detach(pack, item);
+	detach(pack, obj);
 	inpack--;
     }
     else
@@ -86,29 +65,28 @@ int ydelta, xdelta;
 	obj->o_count--;
 	if (obj->o_group == 0)
 	    inpack--;
-	nitem = (struct linked_list *) new_item(sizeof *obj);
-	obj = (struct object *) ldata(nitem);
-	*obj = *((struct object *) ldata(item));
-	obj->o_count = 1;
-	item = nitem;
+	nitem = new_item();
+	*nitem = *obj;
+	nitem->o_count = 1;
+	obj = nitem;
     }
     do_motion(obj, ydelta, xdelta);
     /*
      * AHA! Here it has hit something.  If it is a wall or a door,
-     * or if it misses (combat) the mosnter, put it on the floor
+     * or if it misses (combat) the monster, put it on the floor
      */
-    if (!isupper(mvwinch(mw, obj->o_pos.y, obj->o_pos.x))
+    if (moat(obj->o_pos.y, obj->o_pos.x) == NULL
 	|| !hit_monster(unc(obj->o_pos), obj))
-	    fall(item, TRUE);
-    mvwaddch(cw, hero.y, hero.x, PLAYER);
+	    fall(obj, TRUE);
 }
 
 /*
- * do the actual motion on the screen done by an object traveling
- * across the room
+ * do_motion:
+ *	Do the actual motion on the screen done by an object traveling
+ *	across the room
  */
 do_motion(obj, ydelta, xdelta)
-register struct object *obj;
+register THING *obj;
 register int ydelta, xdelta;
 {
     /*
@@ -122,10 +100,8 @@ register int ydelta, xdelta;
 	/*
 	 * Erase the old one
 	 */
-	if (!ce(obj->o_pos, hero) && cansee(unc(obj->o_pos)) &&
-	    mvwinch(cw, obj->o_pos.y, obj->o_pos.x) != ' ')
-		    mvwaddch(cw, obj->o_pos.y, obj->o_pos.x,
-			    show(obj->o_pos.y, obj->o_pos.x));
+	if (!ce(obj->o_pos, hero) && cansee(unc(obj->o_pos)))
+	    mvaddch(obj->o_pos.y, obj->o_pos.x, chat(obj->o_pos.y, obj->o_pos.x));
 	/*
 	 * Get the new position
 	 */
@@ -137,11 +113,10 @@ register int ydelta, xdelta;
 	     * It hasn't hit anything yet, so display it
 	     * If it alright.
 	     */
-	    if (cansee(unc(obj->o_pos)) &&
-		mvwinch(cw, obj->o_pos.y, obj->o_pos.x) != ' ')
+	    if (cansee(unc(obj->o_pos)))
 	    {
-		mvwaddch(cw, obj->o_pos.y, obj->o_pos.x, obj->o_type);
-		draw(cw);
+		mvaddch(obj->o_pos.y, obj->o_pos.x, obj->o_type);
+		refresh();
 	    }
 	    continue;
 	}
@@ -153,106 +128,100 @@ register int ydelta, xdelta;
  * fall:
  *	Drop an item someplace around here.
  */
-
-fall(item, pr)
-register struct linked_list *item;
-bool pr;
+fall(obj, pr)
+register THING *obj;
+register bool pr;
 {
-    register struct object *obj;
-    register struct room *rp;
     static coord fpos;
+    register int index;
 
-    obj = (struct object *) ldata(item);
     if (fallpos(&obj->o_pos, &fpos, TRUE))
     {
-	mvaddch(fpos.y, fpos.x, obj->o_type);
+	index = INDEX(fpos.y, fpos.x);
+	_level[index] = obj->o_type;
 	obj->o_pos = fpos;
-	if ((rp = roomin(&hero)) != NULL && !(rp->r_flags & ISDARK))
+	if (cansee(fpos.y, fpos.x))
 	{
-	    light(&hero);
-	    mvwaddch(cw, hero.y, hero.x, PLAYER);
+	    mvaddch(fpos.y, fpos.x, obj->o_type);
+	    if (_monst[index] != NULL)
+		_monst[index]->t_oldch = obj->o_type;
 	}
-	attach(lvl_obj, item);
+	attach(lvl_obj, obj);
 	return;
     }
+    discard(obj);
     if (pr)
-        if (obj->o_type == WEAPON) /* BUGFUX: Identification trick */
-            msg("Your %s vanishes as it hits the ground.", w_names[obj->o_which]);
-        else
-            msg("%s vanishes as it hits the ground.", inv_name(obj,TRUE));
-    discard(item);
+		msg("the %s vanishes as it hits the ground", 
+			/* BUGFIX: Identification trick */
+			(obj->o_type==WEAPON) ? w_names[obj->o_which] : inv_name(obj,TRUE));
+
+	discard(obj);
 }
 
 /*
  * init_weapon:
  *	Set up the initial goodies for a weapon
  */
-
 init_weapon(weap, type)
-register struct object *weap;
+register THING *weap;
 char type;
 {
     register struct init_weps *iwp;
 
     iwp = &init_dam[type];
-    strcpy(weap->o_damage,iwp->iw_dam);
-    strcpy(weap->o_hurldmg,iwp->iw_hrl);
+    strncpy(weap->o_damage, iwp->iw_dam, 8);
+    strncpy(weap->o_hurldmg, iwp->iw_hrl, 8);
     weap->o_launch = iwp->iw_launch;
     weap->o_flags = iwp->iw_flags;
     if (weap->o_flags & ISMANY)
     {
 	weap->o_count = rnd(8) + 8;
-	weap->o_group = newgrp();
+	weap->o_group = group++;
     }
     else
 	weap->o_count = 1;
 }
 
 /*
- * Does the missile hit the monster
+ * hit_monster:
+ *	Does the missile hit the monster?
  */
-
 hit_monster(y, x, obj)
 register int y, x;
-struct object *obj;
+THING *obj;
 {
     static coord mp;
 
     mp.y = y;
     mp.x = x;
-    return fight(&mp, winat(y, x), obj, TRUE);
+    return fight(&mp, moat(y, x)->t_type, obj, TRUE);
 }
 
 /*
  * num:
  *	Figure out the plus number for armor/weapons
  */
-
 char *
-num(n1, n2)
+num(n1, n2, type)
 register int n1, n2;
+register char type;
 {
-    static char numbuf[80];
+    static char numbuf[10];
 
-    if (n1 == 0 && n2 == 0)
-	return "+0";
-    if (n2 == 0)
-	sprintf(numbuf, "%s%d", n1 < 0 ? "" : "+", n1);
-    else
-        sprintf(numbuf, "%s%d,%s%d",
-				n1 < 0 ? "" : "+", n1, n2 < 0 ? "" : "+", n2);
+    sprintf(numbuf, "%s%d", n1 < 0 ? "" : "+", n1);
+    if (type == WEAPON)
+	sprintf(&numbuf[strlen(numbuf)], ",%s%d", n2 < 0 ? "" : "+", n2);
     return numbuf;
-}    
+}
 
 /*
  * wield:
  *	Pull out a certain weapon
  */
-
 wield()
 {
-    register struct linked_list *item;
-    register struct object *obj, *oweapon;
+    register THING *obj, *oweapon;
+    register char *sp;
 
     oweapon = cur_weapon;
     if (!dropcheck(cur_weapon))
@@ -261,36 +230,35 @@ wield()
 	return;
     }
     cur_weapon = oweapon;
-    if ((item = get_item("wield", WEAPON)) == NULL)
+    if ((obj = get_item("wield", WEAPON)) == NULL)
     {
 bad:
 	after = FALSE;
 	return;
     }
 
-    obj = (struct object *) ldata(item);
     if (obj->o_type == ARMOR)
     {
-	msg("You can't wield armor");
+	msg("you can't wield armor");
 	goto bad;
     }
     if (is_current(obj))
         goto bad;
 
-    if (terse)
-	addmsg("W");
-    else
-	addmsg("You are now w");
-    msg("ielding %s", inv_name(obj, TRUE));
+    sp = inv_name(obj, TRUE);
     cur_weapon = obj;
+    if (!terse)
+	addmsg("you are now ");
+    msg("wielding %s (%c)", sp, pack_char(obj));
 }
 
 /*
- * pick a random position around the give (y, x) coordinates
+ * fallpos:
+ *	Pick a random position around the give (y, x) coordinates
  */
-fallpos(pos, newpos, passages)
+fallpos(pos, newpos, pass)
 register coord *pos, *newpos;
-register bool passages;
+register bool pass;
 {
     register int y, x, cnt, ch;
 
@@ -305,7 +273,7 @@ register bool passages;
 	     */
 	    if (y == hero.y && x == hero.x)
 		continue;
-	    if (((ch = winat(y, x)) == FLOOR || (passages && ch == PASSAGE))
+	    if (((ch = chat(y, x)) == FLOOR || (pass && ch == PASSAGE))
 					&& rnd(++cnt) == 0)
 	    {
 		newpos->y = y;

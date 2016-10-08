@@ -1,21 +1,25 @@
 /*
- * This file has all the code for the option command.
- * I would rather this command were not necessary, but
- * it is the only way to keep the wolves off of my back.
+ * This file has all the code for the option command.  I would rather
+ * this command were not necessary, but it is the only way to keep the
+ * wolves off of my back.
  *
- * @(#)options.c	3.3 (Berkeley) 5/25/81
+ * @(#)options.c	4.12 (Berkeley) 3/2/82
  *
  * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
  * All rights reserved.
  *
  * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
-#include "curses.h"
+#include <curses.h>
+#include <termios.h>
 #include <ctype.h>
-#include <string.h>
 #include "rogue.h"
+
+extern struct termios terminal;
+
+#define	EQSTR(a, b, c)	(strncmp(a, b, c) == 0)
 
 #define	NUM_OPTS	(sizeof optlist / sizeof (OPTION))
 
@@ -38,23 +42,26 @@ OPTION	optlist[] = {
     {"terse",	 "Terse output: ",
 		 (int *) &terse,	put_bool,	get_bool	},
     {"flush",	 "Flush typeahead during battle: ",
-		 (int *) &fight_flush,	put_bool,	get_bool	},
+		(int *) &fight_flush,	put_bool,	get_bool	},
     {"jump",	 "Show position only at end of run: ",
-		 (int *) &jump,		put_bool,	get_bool	},
+		(int *) &jump,		put_bool,	get_bool	},
     {"step",	"Do inventories one line at a time: ",
 		(int *) &slow_invent,	put_bool,	get_bool	},
     {"askme",	"Ask me about unidentified things: ",
 		(int *) &askme,		put_bool,	get_bool	},
+    {"passgo",	"Follow turnings in passageways: ",
+		(int *) &passgo,	put_bool,	get_bool	},
     {"name",	 "Name: ",
-		 (int *) whoami,	put_str,	get_str		},
+		(int *) whoami,		put_str,	get_str		},
     {"fruit",	 "Fruit: ",
-		 (int *) fruit,		put_str,	get_str		},
+		(int *) fruit,		put_str,	get_str		},
     {"file",	 "Save file: ",
-		 (int *) file_name,	put_str,	get_str		}
+		(int *) file_name,	put_str,	get_str		}
 };
 
 /*
- * print and then set options from the terminal
+ * option:
+ *	Print and then set options from the terminal
  */
 option()
 {
@@ -62,11 +69,10 @@ option()
     register int	retval;
 
     wclear(hw);
-    touchwin(hw);
     /*
      * Display current values of options
      */
-    for (op = optlist; op <= &optlist[NUM_OPTS-1]; op++)
+    for (op = optlist; op < &optlist[NUM_OPTS]; op++)
     {
 	waddstr(hw, op->o_prompt);
 	(*op->o_putfunc)(op->o_opt);
@@ -76,7 +82,7 @@ option()
      * Set values
      */
     wmove(hw, 0, 0);
-    for (op = optlist; op <= &optlist[NUM_OPTS-1]; op++)
+    for (op = optlist; op < &optlist[NUM_OPTS]; op++)
     {
 	waddstr(hw, op->o_prompt);
 	if ((retval = (*op->o_getfunc)(op->o_opt, hw)))
@@ -88,7 +94,7 @@ option()
 	    }
 	    else	/* trying to back up beyond the top */
 	    {
-		beep();
+		putchar('\007');
 		wmove(hw, 0, 0);
 		op--;
 	    }
@@ -97,15 +103,16 @@ option()
      * Switch back to original screen
      */
     mvwaddstr(hw, LINES-1, 0, "--Press space to continue--");
-    draw(hw);
-    wait_for(hw,' ');
-    clearok(cw, TRUE);
-    touchwin(cw);
+    wrefresh(hw);
+    wait_for(' ');
+    clearok(curscr, TRUE);
+    touchwin(stdscr);
     after = FALSE;
 }
 
 /*
- * put out a boolean
+ * put_bool
+ *	Put out a boolean
  */
 put_bool(b)
 bool	*b;
@@ -114,7 +121,8 @@ bool	*b;
 }
 
 /*
- * put out a string
+ * put_str:
+ *	Put out a string
  */
 put_str(str)
 char *str;
@@ -123,9 +131,9 @@ char *str;
 }
 
 /*
- * allow changing a boolean option and print it out
+ * get_bool:
+ *	Allow changing a boolean option and print it out
  */
-
 get_bool(bp, win)
 bool *bp;
 WINDOW *win;
@@ -136,11 +144,11 @@ WINDOW *win;
     op_bad = TRUE;
     getyx(win, oy, ox);
     waddstr(win, *bp ? "True" : "False");
-    while(op_bad)	
+    while (op_bad)	
     {
 	wmove(win, oy, ox);
-	draw(win);
-	switch (readchar(win))
+	wrefresh(win);
+	switch (readchar())
 	{
 	    case 't':
 	    case 'T':
@@ -172,59 +180,50 @@ WINDOW *win;
 }
 
 /*
- * set a string option
+ * get_str:
+ *	Set a string option
  */
+#define MAXINP	50	/* max string to read from terminal or environment */
+
 get_str(opt, win)
 register char *opt;
 WINDOW *win;
 {
     register char *sp;
     register int c, oy, ox;
-    char buf[80];
+    char buf[MAXSTR];
 
-    draw(win);
     getyx(win, oy, ox);
+    wrefresh(win);
     /*
      * loop reading in the string, and put it in a temporary buffer
      */
-    for (sp = buf;
-	(c = readchar(win)) != '\n' && c != '\r' && c != '\033' && c != '\007';
-	wclrtoeol(win), draw(win))
+    for (sp = buf; (c = readchar()) != '\n' && c != '\r' && c != '\033';
+	wclrtoeol(win), wrefresh(win))
     {
 	if (c == -1)
 	    continue;
-	else if (c == md_erasechar())	/* process erase character */
+	else if (c == terminal.c_cc[VERASE])	/* process erase character */
 	{
 	    if (sp > buf)
 	    {
 		register int i;
-		int myx, myy;
 
 		sp--;
-
-		for (i = (int) strlen(unctrl(*sp)); i; i--)
-		{
-		    getyx(win,myy,myx);
-		    if ((myx == 0)&& (myy > 0))
-		    {
-			wmove(win,myy-1,getmaxx(win)-1);
-			waddch(win,' ');
-			wmove(win,myy-1,getmaxx(win)-1);
-		    }
-		    else
-			waddch(win, '\b');
-		}
+		for (i = strlen(unctrol(*sp)); i; i--)
+		    waddch(win, '\b');
 	    }
 	    continue;
 	}
-	else if (c == md_killchar())	/* process kill character */
+	else if (c == terminal.c_cc[VKILL])     /* process kill character */
 	{
 	    sp = buf;
 	    wmove(win, oy, ox);
 	    continue;
 	}
 	else if (sp == buf)
-	    if (c == '-')
+	{
+	    if (c == '-' && win != stdscr)
 		break;
 	    else if (c == '~')
 	    {
@@ -233,11 +232,13 @@ WINDOW *win;
 		sp += strlen(home);
 		continue;
 	    }
-
-	if ((sp - buf) < 78) /* Avoid overflow */
+	}
+	if (sp >= &buf[MAXINP] || !(isprint(c) || c == ' '))
+	    putchar(CTRL('G'));
+	else
 	{
 	    *sp++ = c;
-	    waddstr(win, unctrl(c));
+	    waddstr(win, unctrol(c));
 	}
     }
     *sp = '\0';
@@ -246,8 +247,8 @@ WINDOW *win;
     wmove(win, oy, ox);
     waddstr(win, opt);
     waddch(win, '\n');
-    draw(win);
-    if (win == cw)
+    wrefresh(win);
+    if (win == stdscr)
 	mpos += sp - buf;
     if (c == '-')
 	return MINUS;
@@ -257,14 +258,32 @@ WINDOW *win;
 	return NORM;
 }
 
+#ifdef WIZARD
 /*
- * parse options from string, usually taken from the environment.
- * the string is a series of comma seperated values, with booleans
- * being stated as "name" (true) or "noname" (false), and strings
- * being "name=....", with the string being defined up to a comma
- * or the end of the entire option string.
+ * get_num:
+ *	Get a numeric option
  */
+get_num(opt, win)
+short *opt;
+WINDOW *win;
+{
+    register int i;
+    char buf[MAXSTR];
 
+    if ((i = get_str(buf, win)) == NORM)
+	*opt = atoi(buf);
+    return i;
+}
+#endif
+
+/*
+ * parse_opts:
+ *	Parse options from string, usually taken from the environment.
+ *	The string is a series of comma seperated values, with booleans
+ *	being stated as "name" (true) or "noname" (false), and strings
+ *	being "name=....", with the string being defined up to a comma
+ *	or the end of the entire option string.
+ */
 parse_opts(str)
 register char *str;
 {
@@ -283,7 +302,7 @@ register char *str;
 	/*
 	 * Look it up and deal with it
 	 */
-	for (op = optlist; op <= &optlist[NUM_OPTS-1]; op++)
+	for (op = optlist; op < &optlist[NUM_OPTS]; op++)
 	    if (EQSTR(str, op->o_name, len))
 	    {
 		if (op->o_putfunc == put_bool)	/* if option is a boolean */
@@ -334,18 +353,19 @@ register char *str;
 }
 
 /*
- * copy string using unctrl for things
+ * strucpy:
+ *	Copy string using unctrol for things
  */
 strucpy(s1, s2, len)
 register char *s1, *s2;
 register int len;
 {
-    register char *sp;
-
+    if (len > MAXINP)
+	len = MAXINP;
     while (len--)
     {
-	strcpy(s1, (sp = unctrl(*s2)));
-	s1 += strlen(sp);
+	if (isprint(*s2) || *s2 == ' ')
+	    *s1++ = *s2;
 	s2++;
     }
     *s1 = '\0';

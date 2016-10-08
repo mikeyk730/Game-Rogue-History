@@ -1,32 +1,43 @@
 /*
  * File with various monster functions in it
  *
- * @(#)monsters.c	3.18 (Berkeley) 6/15/81
+ * @(#)monsters.c	4.24 (Berkeley) 4/6/82
  *
  * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
  * All rights reserved.
  *
  * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
-#include "curses.h"
+#include <curses.h>
 #include "rogue.h"
-#include <string.h>
 #include <ctype.h>
 
 /*
  * List of monsters in rough order of vorpalness
+ *
+ * NOTE: This not initialized using strings so that xstr doesn't set up
+ * the string not to be saved.  Otherwise genocide is lost through
+ * saving a game.
  */
-char lvl_mons[27] =  "KJBSHEAOZGLCRQNYTWFIXUMVDP";
-char wand_mons[27] = "KJBSH AOZG CRQ Y W IXU V  ";
+char lvl_mons[] =  {
+    'K', 'J', 'B', 'S', 'H', 'E', 'A', 'O', 'Z', 'G', 'L', 'C', 'R',
+    'Q', 'N', 'Y', 'T', 'W', 'F', 'I', 'X', 'U', 'M', 'V', 'P', 'D',
+    '\0'
+};
+
+char wand_mons[] = {
+    'K', 'J', 'B', 'S', 'H', ' ', 'A', 'O', 'Z', 'G', ' ', 'C', 'R',
+    'Q', ' ', 'Y', 'T', 'W', ' ', 'I', 'X', 'U', ' ', 'V', 'P', ' ',
+    '\0'
+};
 
 /*
  * randmonster:
  *	Pick a monster to show up.  The lower the level,
  *	the meaner the monster.
  */
-
 randmonster(wander)
 bool wander;
 {
@@ -49,186 +60,189 @@ bool wander;
  * new_monster:
  *	Pick a new monster and add it to the list
  */
-
-new_monster(item, type, cp)
-struct linked_list *item;
+new_monster(tp, type, cp)
+register THING *tp;
 char type;
 register coord *cp;
 {
-    register struct thing *tp;
     register struct monster *mp;
+    register int lev_add;
 
-    attach(mlist, item);
-    tp = (struct thing *) ldata(item);
+    if ((lev_add = level - AMULETLEVEL) < 0)
+	lev_add = 0;
+    attach(mlist, tp);
     tp->t_type = type;
+    tp->t_disguise = type;
     tp->t_pos = *cp;
-    tp->t_oldch = mvwinch(cw, cp->y, cp->x);
-    mvwaddch(mw, cp->y, cp->x, tp->t_type);
+    tp->t_oldch = mvinch(cp->y, cp->x);
+    tp->t_room = roomin(cp);
+    moat(cp->y, cp->x) = tp;
     mp = &monsters[tp->t_type-'A'];
-    tp->t_stats.s_hpt = roll(mp->m_stats.s_lvl, 8);
-    tp->t_stats.s_lvl = mp->m_stats.s_lvl;
-    tp->t_stats.s_arm = mp->m_stats.s_arm;
-    strcpy(tp->t_stats.s_dmg,mp->m_stats.s_dmg);
-    tp->t_stats.s_exp = mp->m_stats.s_exp;
-    tp->t_stats.s_str.st_str = 10;
+    tp->t_stats.s_lvl = mp->m_stats.s_lvl + lev_add;
+    tp->t_stats.s_maxhp = tp->t_stats.s_hpt = roll(tp->t_stats.s_lvl, 8);
+    tp->t_stats.s_arm = mp->m_stats.s_arm - lev_add;
+    strncpy(tp->t_stats.s_dmg,mp->m_stats.s_dmg,16);
+    tp->t_stats.s_str = mp->m_stats.s_str;
+    tp->t_stats.s_exp = mp->m_stats.s_exp + lev_add * 10 + exp_add(tp);
     tp->t_flags = mp->m_flags;
     tp->t_turn = TRUE;
     tp->t_pack = NULL;
     if (ISWEARING(R_AGGR))
 	runto(cp, &hero);
     if (type == 'M')
-    {
-	char mch;
+	switch (rnd(level > 25 ? 9 : 8))
+	{
+	    case 0: tp->t_disguise = GOLD;
+	    when 1: tp->t_disguise = POTION;
+	    when 2: tp->t_disguise = SCROLL;
+	    when 3: tp->t_disguise = STAIRS;
+	    when 4: tp->t_disguise = WEAPON;
+	    when 5: tp->t_disguise = ARMOR;
+	    when 6: tp->t_disguise = RING;
+	    when 7: tp->t_disguise = STICK;
+	    when 8: tp->t_disguise = AMULET;
+	}
+}
 
-	if (tp->t_pack != NULL)
-	    mch = ((struct object *) ldata(tp->t_pack))->o_type;
-	else
-	    switch (rnd(level > 25 ? 9 : 8))
-	    {
-		case 0: mch = GOLD;
-		when 1: mch = POTION;
-		when 2: mch = SCROLL;
-		when 3: mch = STAIRS;
-		when 4: mch = WEAPON;
-		when 5: mch = ARMOR;
-		when 6: mch = RING;
-		when 7: mch = STICK;
-		when 8: mch = AMULET;
-	    }
-	tp->t_disguise = mch;
-    }
+/*
+ * expadd:
+ *	Experience to add for this monster's level/hit points
+ */
+exp_add(tp)
+register THING *tp;
+{
+    register int mod;
+
+    if (tp->t_stats.s_lvl == 1)
+	mod = tp->t_stats.s_maxhp / 8;
+    else
+	mod = tp->t_stats.s_maxhp / 6;
+    if (tp->t_stats.s_lvl > 9)
+	mod *= 20;
+    else if (tp->t_stats.s_lvl > 6)
+	mod *= 4;
+    return mod;
 }
 
 /*
  * wanderer:
- *	A wandering monster has awakened and is headed for the player
+ *	Create a new wandering monster and aim it at the player
  */
-
 wanderer()
 {
-    register int i, ch;
-    register struct room *rp, *hr = roomin(&hero);
-    register struct linked_list *item;
-    register struct thing *tp;
+    register int i;
+    register struct room *rp;
+    register THING *tp;
     coord cp;
 
-    item = new_item(sizeof *tp);
+    tp = new_item();
     do
     {
 	i = rnd_room();
-	if ((rp = &rooms[i]) == hr)
+	if ((rp = &rooms[i]) == proom)
 	    continue;
 	rnd_pos(rp, &cp);
-	if ((ch = mvwinch(stdscr, cp.y, cp.x)) == ERR)
-	{
-	    debug("Routine wanderer: mvwinch failed to %d,%d", cp.y, cp.x);
-	    if (wizard)
-		wait_for(cw,'\n');
-	    return;
-	}
-    } until(hr != rp && step_ok(ch));
-    new_monster(item, randmonster(TRUE), &cp);
-    tp = (struct thing *) ldata(item);
-    tp->t_flags |= ISRUN;
-    tp->t_pos = cp;
-    tp->t_dest = &hero;
+    } until (rp != proom && step_ok(winat(cp.y, cp.x)));
+    new_monster(tp, randmonster(TRUE), &cp);
+    runto(&tp->t_pos, &hero);
+#ifdef WIZARD
     if (wizard)
-	msg("Started a wandering %s", monsters[tp->t_type-'A'].m_name);
+	msg("started a wandering %s", monsters[tp->t_type-'A'].m_name);
+#endif
 }
 
 /*
- * what to do when the hero steps next to a monster
+ * wake_monster:
+ *	What to do when the hero steps next to a monster
  */
-struct linked_list *
+THING *
 wake_monster(y, x)
 int y, x;
 {
-    register struct thing *tp;
-    register struct linked_list *it;
+    register THING *tp;
     register struct room *rp;
     register char ch;
 
-    if ((it = find_mons(y, x)) == NULL)
-	fatal("Can't find monster in wake");
-    tp = (struct thing *) ldata(it);
+#ifdef WIZARD
+    if ((tp = moat(y, x)) == NULL)
+	msg("can't find monster in wake_monster");
+#else
+    tp = moat(y, x);
+#endif
     ch = tp->t_type;
     /*
      * Every time he sees mean monster, it might start chasing him
      */
-    if (rnd(100) > 33 && on(*tp, ISMEAN) && off(*tp, ISHELD)
+    if (!on(*tp, ISRUN) && rnd(3) != 0 && on(*tp, ISMEAN) && !on(*tp, ISHELD)
 	&& !ISWEARING(R_STEALTH))
     {
 	tp->t_dest = &hero;
 	tp->t_flags |= ISRUN;
     }
-    if (ch == 'U' && off(player, ISBLIND))
+    if (ch == 'U' && !on(player, ISBLIND) && !on(*tp, ISFOUND)
+	&& !on(*tp, ISCANC) && on(*tp, ISRUN))
     {
-        rp = roomin(&hero);
-	if ((rp != NULL && !(rp->r_flags&ISDARK))
-	    || DISTANCE(y, x, hero.y, hero.x) < 3)
+        rp = proom;
+	if ((rp != NULL && !(rp->r_flags & ISDARK))
+	    || DISTANCE(y, x, hero.y, hero.x) < LAMPDIST)
 	{
-	    if (off(*tp, ISFOUND) && !save(VS_MAGIC))
-	    {
-		msg("The umber hulk's gaze has confused you.");
-		if (on(player, ISHUH))
-		    lengthen(unconfuse, rnd(20)+HUHDURATION);
-		else
-		    fuse(unconfuse, 0, rnd(20)+HUHDURATION, AFTER);
-		player.t_flags |= ISHUH;
-	    }
 	    tp->t_flags |= ISFOUND;
+	    if (!save(VS_MAGIC))
+	    {
+		if (on(player, ISHUH))
+		    lengthen(unconfuse, rnd(20) + HUHDURATION);
+		else
+		    fuse(unconfuse, 0, rnd(20) + HUHDURATION, AFTER);
+		player.t_flags |= ISHUH;
+		msg("the umber hulk's gaze has confused you");
+	    }
 	}
     }
-    /*
-     * Hide invisible monsters
-     */
-    if (on(*tp, ISINVIS) && off(player, CANSEE))
-	ch = mvwinch(stdscr, y, x);
     /*
      * Let greedy ones guard gold
      */
-    if (on(*tp, ISGREED) && off(*tp, ISRUN))
+    if (on(*tp, ISGREED) && !on(*tp, ISRUN))
     {
-        rp = roomin(&hero);
-
-	if (rp != NULL && rp->r_goldval)
-	{
-	    tp->t_dest = &rp->r_gold;
-	    tp->t_flags |= ISRUN;
-	}
+	tp->t_flags |= ISRUN;
+	if (proom->r_goldval)
+	    tp->t_dest = &proom->r_gold;
+	else
+	    tp->t_dest = &hero;
     }
-
-    return it;
+    return tp;
 }
 
+/*
+ * genocide:
+ *	Wipe one monster out of existence (for now...)
+ */
 genocide()
 {
-    register struct linked_list *ip;
-    register struct thing *mp;
+    register THING *mp;
     register char c;
     register int i;
-    register struct linked_list *nip;
+    register THING *nmp;
 
-    addmsg("Which monster");
+    addmsg("which monster");
     if (!terse)
 	addmsg(" do you wish to wipe out");
     msg("? ");
-    while (!isalpha(c = readchar(cw)))
+    while (!isalpha(c = readchar()))
 	if (c == ESCAPE)
 	    return;
 	else
 	{
 	    mpos = 0;
-	    msg("Please specify a letter between 'A' and 'Z'");
+	    msg("please specifiy a letter between 'A' and 'Z'");
 	}
+    mpos = 0;
     if (islower(c))
 	c = toupper(c);
-    for (ip = mlist; ip; ip = nip)
+    for (mp = mlist; mp; mp = nmp)
     {
-	mp = (struct thing *) ldata(ip);
-	nip = next(ip);
+	nmp = next(mp);
 	if (mp->t_type == c)
-	    remove_monster(&mp->t_pos, ip);
+	    remove_monster(&mp->t_pos, mp, FALSE);
     }
     for (i = 0; i < 26; i++)
 	if (lvl_mons[i] == c)
@@ -237,4 +251,18 @@ genocide()
 	    wand_mons[i] = ' ';
 	    break;
 	}
+    if (!terse)
+	addmsg("there will be ");
+    msg("no more %ss", monsters[c - 'A'].m_name);
+}
+
+/*
+ * give_pack:
+ *	Give a pack to a monster if it deserves one
+ */
+give_pack(tp)
+register THING *tp;
+{
+    if (rnd(100) < monsters[tp->t_type-'A'].m_carry)
+	attach(tp->t_pack, new_thing());
 }

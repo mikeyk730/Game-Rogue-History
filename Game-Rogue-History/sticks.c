@@ -2,22 +2,25 @@
  * Functions to implement the various sticks one might find
  * while wandering around the dungeon.
  *
- * @(#)sticks.c	3.14 (Berkeley) 6/15/81
+ * @(#)sticks.c	4.22 (Berkeley) 5/19/82
  *
  * Rogue: Exploring the Dungeons of Doom
- * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * Copyright (C) 1980, 1981, 1982 Michael Toy, Ken Arnold and Glenn Wichman
  * All rights reserved.
  *
  * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
-#include "curses.h"
+#include <curses.h>
 #include <ctype.h>
-#include <string.h>
 #include "rogue.h"
 
+/*
+ * fix_stick:
+ *	Set up a new stick
+ */
 fix_stick(cur)
-register struct object *cur;
+register THING *cur;
 {
     if (strcmp(ws_type[cur->o_which], "staff") == 0)
 	strcpy(cur->o_damage,"2d3");
@@ -29,7 +32,7 @@ register struct object *cur;
     switch (cur->o_which)
     {
 	case WS_HIT:
-	    cur->o_hplus = 3;
+	    cur->o_hplus = 100;
 	    cur->o_dplus = 3;
 	    strcpy(cur->o_damage,"1d8");
 	when WS_LIGHT:
@@ -37,34 +40,29 @@ register struct object *cur;
     }
 }
 
-do_zap(gotdir)
-bool gotdir;
+/*
+ * do_zap:
+ *	Perform a zap with a wand
+ */
+do_zap()
 {
-    register struct linked_list *item;
-    register struct object *obj;
-    register struct room *rp;
-    register struct thing *tp;
+    register THING *obj, *tp;
     register int y, x;
+    register char *name;
 
-    if ((item = get_item("zap with", STICK)) == NULL)
+    if ((obj = get_item("zap with", STICK)) == NULL)
 	return;
-    obj = (struct object *) ldata(item);
     if (obj->o_type != STICK)
     {
-	msg("You can't zap with that!");
 	after = FALSE;
+	msg("you can't zap with that!");
 	return;
     }
     if (obj->o_charges == 0)
     {
-	msg("Nothing happens.");
+	msg("nothing happens");
 	return;
     }
-    if (!gotdir)
-	do {
-	    delta.y = rnd(3) - 1;
-	    delta.x = rnd(3) - 1;
-	} while (delta.y == 0 && delta.x == 0);
     switch (obj->o_which)
     {
 	case WS_LIGHT:
@@ -72,20 +70,19 @@ bool gotdir;
 	     * Reddy Kilowat wand.  Light up the room
 	     */
 	    ws_know[WS_LIGHT] = TRUE;
-	    if ((rp = roomin(&hero)) == NULL)
-		msg("The corridor glows and then fades");
+	    if (proom->r_flags & ISGONE)
+		msg("the corridor glows and then fades");
 	    else
 	    {
-		addmsg("The room is lit");
-		if (!terse)
-		    addmsg(" by a shimmering blue light.");
-		endmsg();
-		rp->r_flags &= ~ISDARK;
+		proom->r_flags &= ~ISDARK;
 		/*
 		 * Light the room and put the player back up
 		 */
-		light(&hero);
-		mvwaddch(cw, hero.y, hero.x, PLAYER);
+		enter_room(&hero);
+		addmsg("the room is lit");
+		if (!terse)
+		    addmsg(" by a shimmering blue light");
+		endmsg();
 	    }
 	when WS_DRAIN:
 	    /*
@@ -95,14 +92,11 @@ bool gotdir;
 	     */
 	    if (pstats.s_hpt < 2)
 	    {
-		msg("You are too weak to use it.");
+		msg("you are too weak to use it");
 		return;
 	    }
-	    else if ((rp = roomin(&hero)) == NULL)
-		drain(hero.y-1, hero.y+1, hero.x-1, hero.x+1);
 	    else
-		drain(rp->r_pos.y, rp->r_pos.y+rp->r_max.y,
-		    rp->r_pos.x, rp->r_pos.x+rp->r_max.x);
+		drain();
 	when WS_POLYMORPH:
 	case WS_TELAWAY:
 	case WS_TELTO:
@@ -118,84 +112,97 @@ bool gotdir;
 		y += delta.y;
 		x += delta.x;
 	    }
-	    if (isupper(monster = mvwinch(mw, y, x)))
+	    if ((tp = moat(y, x)) != NULL)
 	    {
-		register char omonst = monster;
+		register char omonst;
 
+		omonst = monster = tp->t_type;
 		if (monster == 'F')
 		    player.t_flags &= ~ISHELD;
-		item = find_mons(y, x);
-		tp = (struct thing *) ldata(item);
 		if (obj->o_which == WS_POLYMORPH)
 		{
-		    detach(mlist, item);
+		    register THING *pp;
+
+		    pp = tp->t_pack;
+		    detach(mlist, tp);
+		    if (see_monst(tp))
+			mvaddch(y, x, chat(y, x));
 		    oldch = tp->t_oldch;
 		    delta.y = y;
 		    delta.x = x;
-		    new_monster(item, monster = rnd(26) + 'A', &delta);
-		    if (!(tp->t_flags & ISRUN))
-			runto(&delta, &hero);
-		    if (isupper(mvwinch(cw, y, x)))
-			mvwaddch(cw, y, x, monster);
+		    new_monster(tp, monster = rnd(26) + 'A', &delta);
+		    if (see_monst(tp))
+			mvaddch(y, x, monster);
 		    tp->t_oldch = oldch;
+		    tp->t_pack = pp;
 		    ws_know[WS_POLYMORPH] |= (monster != omonst);
 		}
 		else if (obj->o_which == WS_CANCEL)
 		{
 		    tp->t_flags |= ISCANC;
-		    tp->t_flags &= ~ISINVIS;
+		    tp->t_flags &= ~(ISINVIS|CANHUH);
+		    tp->t_disguise = tp->t_type;
 		}
 		else
 		{
+		    if (see_monst(tp))
+			mvaddch(y, x, tp->t_oldch);
 		    if (obj->o_which == WS_TELAWAY)
 		    {
 			do
 			{
 			    rm = rnd_room();
 			    rnd_pos(&rooms[rm], &tp->t_pos);
-			} until(winat(tp->t_pos.y, tp->t_pos.x) == FLOOR);
+			} until (winat(tp->t_pos.y, tp->t_pos.x) == FLOOR);
+			if (see_monst(tp))
+			    mvaddch(tp->t_pos.y, tp->t_pos.x, tp->t_disguise);
+			else if (on(player, SEEMONST))
+			{
+			    standout();
+			    mvaddch(tp->t_pos.y, tp->t_pos.x, tp->t_disguise);
+			    standend();
+			}
 		    }
 		    else
 		    {
 			tp->t_pos.y = hero.y + delta.y;
 			tp->t_pos.x = hero.x + delta.x;
 		    }
-		    if (isupper(mvwinch(cw, y, x)))
-			mvwaddch(cw, y, x, tp->t_oldch);
-		    tp->t_dest = &hero;
-		    tp->t_flags |= ISRUN;
-		    mvwaddch(mw, y, x, ' ');
-		    mvwaddch(mw, tp->t_pos.y, tp->t_pos.x, monster);
+		    moat(y, x) = NULL;
+		    moat(tp->t_pos.y, tp->t_pos.x) = tp;
+		    if (tp->t_type == 'F')
+			player.t_flags &= ~ISHELD;
 		    if (tp->t_pos.y != y || tp->t_pos.x != x)
-			tp->t_oldch = mvwinch(cw, tp->t_pos.y, tp->t_pos.x);
+			tp->t_oldch = mvinch(tp->t_pos.y, tp->t_pos.x);
 		}
+		tp->t_dest = &hero;
+		tp->t_flags |= ISRUN;
 	    }
 	}
 	when WS_MISSILE:
 	{
-	    static struct object bolt =
-	    {
-		'*' , {0, 0}, 0, "", "1d4" , 0, 0, 100, 1, 0, 0, 0
-	    };
+	    THING bolt;
 
+	    ws_know[WS_MISSILE] = TRUE;
+	    bolt.o_type = '*';
+	    strcpy(bolt.o_hurldmg,"1d4");
+	    bolt.o_hplus = 100;
+	    bolt.o_dplus = 1;
+	    bolt.o_flags = ISMISL;
+	    if (cur_weapon != NULL)
+		bolt.o_launch = cur_weapon->o_which;
 	    do_motion(&bolt, delta.y, delta.x);
-	    if (isupper(mvwinch(mw, bolt.o_pos.y, bolt.o_pos.x))
-		&& !save_throw(VS_MAGIC, ldata(find_mons(unc(bolt.o_pos)))))
+	    if ((tp = moat(bolt.o_pos.y, bolt.o_pos.x)) != NULL && !save_throw(VS_MAGIC, tp))
 		    hit_monster(unc(bolt.o_pos), &bolt);
 	    else if (terse)
-		msg("Missile vanishes");
+		msg("missle vanishes");
 	    else
-		msg("The missile vanishes with a puff of smoke");
-	    ws_know[WS_MISSILE] = TRUE;
+		msg("the missle vanishes with a puff of smoke");
 	}
 	when WS_HIT:
-	{
-	    register char ch;
-
 	    delta.y += hero.y;
 	    delta.x += hero.x;
-	    ch = winat(delta.y, delta.x);
-	    if (isupper(ch))
+	    if ((tp = moat(delta.y, delta.x)) != NULL)
 	    {
 		if (rnd(20) == 0)
 		{
@@ -207,9 +214,8 @@ bool gotdir;
 		    strcpy(obj->o_damage,"1d8");
 		    obj->o_dplus = 3;
 		}
-		fight(&delta, ch, obj, FALSE);
+		fight(&delta, tp->t_type, obj, FALSE);
 	    }
-	}
 	when WS_HASTE_M:
 	case WS_SLOW_M:
 	    y = hero.y;
@@ -219,10 +225,8 @@ bool gotdir;
 		y += delta.y;
 		x += delta.x;
 	    }
-	    if (isupper(mvwinch(mw, y, x)))
+	    if ((tp = moat(y, x)) != NULL)
 	    {
-		item = find_mons(y, x);
-		tp = (struct thing *) ldata(item);
 		if (obj->o_which == WS_HASTE_M)
 		{
 		    if (on(*tp, ISSLOW))
@@ -245,95 +249,17 @@ bool gotdir;
 	when WS_ELECT:
 	case WS_FIRE:
 	case WS_COLD:
-	{
-	    register char dirch, ch, *name;
-	    register bool bounced, used;
-	    coord pos;
-	    coord spotpos[BOLT_LENGTH];
-	    static struct object bolt =
-	    {
-		'*' , {0, 0}, 0, "", "6d6" , 0, 0, 100, 0, 0, 0 ,0
-	    };
-
-
-	    switch (delta.y + delta.x)
-	    {
-		case 0: dirch = '/';
-		when 1: case -1: dirch = (delta.y == 0 ? '-' : '|');
-		when 2: case -2: dirch = '\\';
-	    }
-	    pos = hero;
-	    bounced = FALSE;
-	    used = FALSE;
 	    if (obj->o_which == WS_ELECT)
 		name = "bolt";
 	    else if (obj->o_which == WS_FIRE)
 		name = "flame";
 	    else
 		name = "ice";
-	    for (y = 0; y < BOLT_LENGTH && !used; y++)
-	    {
-		ch = winat(pos.y, pos.x);
-		spotpos[y] = pos;
-		switch (ch)
-		{
-		    case DOOR:
-		    case SECRETDOOR:
-		    case '|':
-		    case '-':
-		    case ' ':
-			bounced = TRUE;
-			delta.y = -delta.y;
-			delta.x = -delta.x;
-			y--;
-			msg("The bolt bounces");
-			break;
-		    default:
-			if (!bounced && isupper(ch))
-			{
-			    if (!save_throw(VS_MAGIC, ldata(find_mons(unc(pos)))))
-			    {
-				bolt.o_pos = pos;
-				hit_monster(unc(pos), &bolt);
-				used = TRUE;
-			    }
-			    else if (ch != 'M' || show(pos.y, pos.x) == 'M')
-			    {
-				if (terse)
-				    msg("%s misses", name);
-				else
-				    msg("The %s whizzes past the %s", name, monsters[ch-'A'].m_name);
-				runto(&pos, &hero);
-			    }
-			}
-			else if (bounced && pos.y == hero.y && pos.x == hero.x)
-			{
-			    bounced = FALSE;
-			    if (!save(VS_MAGIC))
-			    {
-				if (terse)
-				    msg("The %s hits", name);
-				else
-				    msg("You are hit by the %s", name);
-				if ((pstats.s_hpt -= roll(6, 6)) <= 0)
-				    death('b');
-				used = TRUE;
-			    }
-			    else
-				msg("The %s whizzes by you", name);
-			}
-			mvwaddch(cw, pos.y, pos.x, dirch);
-			draw(cw);
-		}
-		pos.y += delta.y;
-		pos.x += delta.x;
-	    }
-	    for (x = 0; x < y; x++)
-		mvwaddch(cw, spotpos[x].y, spotpos[x].x, show(spotpos[x].y, spotpos[x].x));
+	    fire_bolt(&hero, &delta, name);
 	    ws_know[obj->o_which] = TRUE;
-	}
+	when WS_NOP:
 	otherwise:
-	    msg("What a bizarre schtick!");
+	    msg("what a bizarre schtick!");
     }
     obj->o_charges--;
 }
@@ -342,49 +268,168 @@ bool gotdir;
  * drain:
  *	Do drain hit points from player shtick
  */
-
-drain(ymin, ymax, xmin, xmax)
-int ymin, ymax, xmin, xmax;
+drain()
 {
-    register int i, j, count;
-    register struct thing *ick;
-    register struct linked_list *item;
+    register THING *mp;
+    register int cnt;
+    register struct room *corp;
+    register THING **dp;
+    register bool inpass;
+    static THING *drainee[40];
 
     /*
-     * First count how many things we need to spread the hit points among
+     * First cnt how many things we need to spread the hit points among
      */
-    count = 0;
-    for (i = ymin; i <= ymax; i++)
-	for (j = xmin; j <= xmax; j++)
-	    if (isupper(mvwinch(mw, i, j)))
-		count++;
-    if (count == 0)
+    cnt = 0;
+    if (chat(hero.y, hero.x) == DOOR)
+	corp = &passages[flat(hero.y, hero.x) & F_PNUM];
+    else
+	corp = NULL;
+    inpass = (proom->r_flags & ISGONE);
+    dp = drainee;
+    for (mp = mlist; mp != NULL; mp = next(mp))
+	if (mp->t_room == proom || mp->t_room == corp ||
+	    (inpass && chat(mp->t_pos.y, mp->t_pos.x) == DOOR &&
+	    &passages[flat(mp->t_pos.y, mp->t_pos.x) & F_PNUM] == proom))
+		*dp++ = mp;
+    if ((cnt = dp - drainee) == 0)
     {
-	msg("You have a tingling feeling");
+	msg("you have a tingling feeling");
 	return;
     }
-    count = pstats.s_hpt / count;
+    *dp = NULL;
     pstats.s_hpt /= 2;
+    cnt = pstats.s_hpt / cnt;
     /*
      * Now zot all of the monsters
      */
-    for (i = ymin; i <= ymax; i++)
-	for (j = xmin; j <= xmax; j++)
-	    if (isupper(mvwinch(mw, i, j)) &&
-	        ((item = find_mons(i, j)) != NULL))
-	    {
-		ick = (struct thing *) ldata(item);
-		if ((ick->t_stats.s_hpt -= count) < 1)
-		    killed(item, cansee(i, j) && !on(*ick, ISINVIS));
-	    }
+    for (dp = drainee; *dp; dp++)
+    {
+	mp = *dp;
+	if ((mp->t_stats.s_hpt -= cnt) <= 0)
+	    killed(mp, see_monst(mp));
+	else
+	    runto(&mp->t_pos, &hero);
+    }
 }
 
 /*
- * charge a wand for wizards.
+ * fire_bolt:
+ *	Fire a bolt in a given direction from a specific starting place
+ */
+fire_bolt(start, dir, name)
+coord *start, *dir;
+char *name;
+{
+    register char dirch, ch;
+    register THING *tp;
+    register bool hit_hero, used, changed;
+    register int i, j;
+    coord pos;
+    coord spotpos[BOLT_LENGTH];
+    THING bolt;
+
+    bolt.o_type = WEAPON;
+    bolt.o_which = FLAME;
+    strcpy(bolt.o_hurldmg,"6d6");
+    bolt.o_hplus = 100;
+    bolt.o_dplus = 0;
+    w_names[FLAME] = name;
+    switch (dir->y + dir->x)
+    {
+	case 0: dirch = '/';
+	when 1: case -1: dirch = (dir->y == 0 ? '-' : '|');
+	when 2: case -2: dirch = '\\';
+    }
+    pos = *start;
+    hit_hero = (start != &hero);
+    used = FALSE;
+    changed = FALSE;
+    for (i = 0; i < BOLT_LENGTH && !used; i++)
+    {
+	pos.y += dir->y;
+	pos.x += dir->x;
+	ch = winat(pos.y, pos.x);
+	spotpos[i] = pos;
+	switch (ch)
+	{
+	    case DOOR:
+	    case '|':
+	    case '-':
+	    case ' ':
+		if (!changed)
+		    hit_hero = !hit_hero;
+		changed = FALSE;
+		dir->y = -dir->y;
+		dir->x = -dir->x;
+		i--;
+		msg("the %s bounces", name);
+		break;
+	    default:
+		if (!hit_hero && (tp = moat(pos.y, pos.x)) != NULL)
+		{
+		    hit_hero = TRUE;
+		    changed = !changed;
+		    tp->t_oldch = chat(pos.y, pos.x);
+		    if (!save_throw(VS_MAGIC, tp))
+		    {
+			bolt.o_pos = pos;
+			used = TRUE;
+			if (tp->t_type == 'D' && strcmp(name, "flame") == 0)
+			{
+			    addmsg("the flame bounces");
+			    if (!terse)
+				msg("off the dragon");
+			    endmsg();
+			}
+			else
+			    hit_monster(unc(pos), &bolt);
+		    }
+		    else if (ch != 'M' || tp->t_disguise == 'M')
+		    {
+			if (start == &hero)
+			    runto(&pos, &hero);
+			if (terse)
+			    msg("%s misses", name);
+			else
+			    msg("the %s whizzes past the %s", name, monsters[ch-'A'].m_name);
+		    }
+		}
+		else if (hit_hero && ce(pos, hero))
+		{
+		    hit_hero = FALSE;
+		    changed = !changed;
+		    if (!save(VS_MAGIC))
+		    {
+			if ((pstats.s_hpt -= roll(6, 6)) <= 0)
+			    if (start == &hero)
+				death('b');
+			    else
+				death(moat(start->y, start->x)->t_type);
+			used = TRUE;
+			if (terse)
+			    msg("the %s hits", name);
+			else
+			    msg("you are hit by the %s", name);
+		    }
+		    else
+			msg("the %s whizzes by you", name);
+		}
+		mvaddch(pos.y, pos.x, dirch);
+		refresh();
+	}
+    }
+    for (j = 0; j < i; j++)
+	mvaddch(spotpos[j].y, spotpos[j].x, chat(spotpos[j].y, spotpos[j].x));
+}
+
+/*
+ * charge_str:
+ *	Return an appropriate string for a wand charge
  */
 char *
 charge_str(obj)
-register struct object *obj;
+register THING *obj;
 {
     static char buf[20];
 
