@@ -1,76 +1,18 @@
 /*
  * Various installation dependent routines
  *
- * @(#)mach_dep.c	4.27 (NMT from Berkeley 5.2) 8/25/83
+ * mach_dep.c	1.4 (A.I. Design) 12/1/84
  */
 
-/*
- * The various tuneable defines are:
- *
- *	SCOREFILE	Where/if the score file should live.
- *	MAXLOAD		What (if any) the maximum load average should be
- *			when people are playing.  If defined, then
- *		LOADAV		Should rogue define it's own routine to
- *				get the load average?
- *		NAMELIST	If so, where does the system namelist hide?
- *	MAXUSERS	What (if any) the maximum user count should be
- *			when people are playing.  If defined, then
- *		UCOUNT		Should rogue define it's own routine to
- *				count users?
- *		UTMP		If so, where does the user list hide?
- *	CHECKTIME	How often/if rogue should check during the game
- *			for high load average.
- */
+#include	"rogue.h"
+#include	"curses.h"
+#include	"keypad.h"
 
-#include <curses.h>
-#include "extern.h"
-#include <signal.h>
-#include <sys/types.h>
-#include <sys/stat.h>
+#define ULINE() if(is_color) lmagenta();else uline();
+#define TICK_ADDR 0x70
+static int clk_vec[2];
+static int ocb;
 
-#ifdef SCOREFILE
-static char *lockfile = "/tmp/.roguelock";
-#endif
-
-#ifdef CHECKTIME
-static int num_checks;		/* times we've gone over in checkout() */
-#endif
-
-/*
- * init_check:
- *	Check out too see if it is proper to play the game now
- */
-init_check()
-{
-#if defined(MAXLOAD) || defined(MAXUSERS)
-    if (too_much())
-    {
-	printf("Sorry, %s, but the system is too loaded now.\n", whoami);
-	printf("Try again later.  Meanwhile, why not enjoy a%s %s?\n",
-	    vowelstr(fruit), fruit);
-	if (author())
-	    printf("However, since you're a good guy, it's up to you\n");
-	else
-	    exit(1);
-    }
-#endif
-}
-
-/*
- * open_score:
- *	Open up the score file for future use, and then
- *	setuid(getuid()) in case we are running setuid.
- */
-open_score()
-{
-#ifdef SCOREFILE
-    fd = open(SCOREFILE, 2);
-#else
-    fd = -1;
-#endif
-    setuid(getuid());
-    setgid(getgid());
-}
 
 /*
  * setup:
@@ -78,312 +20,53 @@ open_score()
  */
 setup()
 {
-    int  auto_save(), quit(), endit(), tstp();
-#ifdef CHECKTIME
-    int  checkout();
-#endif
-
-    /*
-     * make sure that large terminals don't overflow the bounds
-     * of the program
-     */
-    if (LINES > MAXLINES)
-	LINES = MAXLINES;
-    if (COLS > MAXCOLS)
-	COLS = MAXCOLS;
-
-    signal(SIGHUP, auto_save);
-#ifndef DUMP
-    signal(SIGILL, auto_save);
-    signal(SIGTRAP, auto_save);
-    signal(SIGIOT, auto_save);
-    signal(SIGEMT, auto_save);
-    signal(SIGFPE, auto_save);
-    signal(SIGBUS, auto_save);
-    signal(SIGSEGV, auto_save);
-    signal(SIGSYS, auto_save);
-    signal(SIGTERM, auto_save);
-#endif
-
-    signal(SIGINT, quit);
-#ifndef DUMP
-    signal(SIGQUIT, endit);
-#endif
-#ifdef CHECKTIME
-    signal(SIGALRM, checkout);
-    alarm(CHECKTIME * 60);
-    num_checks = 0;
-#endif
-    crmode();				/* Cbreak mode */
-    noecho();				/* Echo off */
-}
-
-/*
- * start_score:
- *	Start the scoring sequence
- */
-start_score()
-{
-#ifdef CHECKTIME
-    signal(SIGALRM, SIG_IGN);
-#endif
-}
-
-/*
- * symlink:
- *	See if the file has a symbolic link
- */
-symlink(sp)
-char *sp;
-{
-#ifdef S_IFLNK
-    struct stat sbuf2;
-
-    if (lstat(sp, &sbuf2) < 0)
-	return FALSE;
-    else
-	return ((sbuf2.st_mode & S_IFMT) != S_IFREG);
-#else
-    return FALSE;
-#endif
-}
-
-#if defined(MAXLOAD) || defined(MAXUSERS)
-/*
- * too_much:
- *	See if the system is being used too much for this game
- */
-too_much()
-{
-#ifdef MAXLOAD
-    double avec[3];
-#else
-    register int cnt;
-#endif
-
-#ifdef MAXLOAD
-    loadav(avec);
-    return (avec[1] > (MAXLOAD / 10.0));
-#else
-    return (ucount() > MAXUSERS);
-#endif
-}
-
-/*
- * author:
- *	See if a user is an author of the program
- */
-author()
-{
-#ifdef WIZARD
-    if (wizard)
-	return TRUE;
-#endif
-    switch (getuid())
-    {
-	case 162:
-	    return TRUE;
-	default:
-	    return FALSE;
-    }
-}
-#endif
-
-#ifdef CHECKTIME
-/*
- * checkout:
- *	Check each CHECKTIME seconds to see if the load is too high
- */
-checkout()
-{
-    static char *msgs[] = {
-	"The load is too high to be playing.  Please leave in %0.1f minutes",
-	"Please save your game.  You have %0.1f minutes",
-	"Last warning.  You have %0.1f minutes to leave",
-    };
-    int checktime;
-
-    signal(SIGALRM, checkout);
-    if (too_much())
-    {
-	if (author())
-	{
-	    num_checks = 1;
-	    chmsg("The load is rather high, O exaulted one");
+	terse = FALSE;
+	maxrow = 23;
+	if (COLS == 40) {
+		maxrow = 22;
+		terse = TRUE;
 	}
-	else if (num_checks++ == 3)
-	    fatal("Sorry.  You took too long.  You are dead\n");
-	checktime = (CHECKTIME * 60) / num_checks;
-	alarm(checktime);
-	chmsg(msgs[num_checks - 1], ((double) checktime / 60.0));
-    }
-    else
-    {
-	if (num_checks)
-	{
-	    num_checks = 0;
-	    chmsg("The load has dropped back down.  You have a reprieve");
-	}
-	alarm(CHECKTIME * 60);
-    }
+	expert = terse;
+	/*
+	 * Vector CTRL-BREAK to call quit()
+	 */
+	COFF();
+	ocb = set_ctrlb(0);
+}
+
+clock_on()
+{
+	extern int _csval, clock(), (*cls_)(), no_clock();
+	int new_vec[2];
+
+	new_vec[0] = clock;
+	new_vec[1] = _csval;
+	dmain(clk_vec, 2, 0, TICK_ADDR); 
+	dmaout(new_vec, 2, 0, TICK_ADDR);
+	cls_ = no_clock;
+}
+
+no_clock()
+{
+	dmaout(clk_vec, 2, 0, TICK_ADDR);
 }
 
 /*
- * chmsg:
- *	checkout()'s version of msg.  If we are in the middle of a
- *	shell, do a printf instead of a msg to avoid the refresh.
+ * returns a seed for a random number generator
  */
-chmsg(fmt, arg)
-char *fmt;
-int arg;
+srand()
 {
-    if (in_shell)
-    {
-	printf(fmt, arg);
-	putchar('\n');
-	fflush(stdout);
-    }
-    else
-	msg(fmt, arg);
-}
-#endif
-
-#ifdef LOADAV
-
-#include <nlist.h>
-
-struct nlist avenrun = {
-    "_avenrun"
-};
-
-/*
- * loadav:
- *	Looking up load average in core (for system where the loadav()
- *	system call isn't defined
- */
-loadav(avg)
-register double *avg;
-{
-    register int kmem;
-
-    if ((kmem = open("/dev/kmem", 0)) < 0)
-	goto bad;
-    nlist(NAMELIST, &avenrun);
-    if (avenrun.n_type == 0)
-    {
-bad:
-	avg[0] = avg[1] = avg[2] = 0.0;
-	close(kmem);
-	return;
-    }
-
-    lseek(kmem, (long) avenrun.n_value, 0);
-    read(kmem, (char *) avg, 3 * sizeof (double));
-	close(kmem);
-}
-#endif
-
-#ifdef UCOUNT
-/*
- * ucount:
- *	Count number of users on the system
- */
-#include <utmp.h>
-
-struct utmp buf;
-
-ucount()
-{
-    register struct utmp *up;
-    register FILE *utmp;
-    register int count;
-
-    if ((utmp = fopen(UTMP, "r")) == NULL)
-	return 0;
-
-    up = &buf;
-    count = 0;
-
-    while (fread(up, 1, sizeof (*up), utmp) > 0)
-	if (buf.ut_name[0] != '\0')
-	    count++;
-    fclose(utmp);
-    return count;
-}
-#endif
-
-/*
- * lock_sc:
- *	lock the score file.  If it takes too long, ask the user if
- *	they care to wait.  Return TRUE if the lock is successful.
- */
-lock_sc()
-{
-#ifdef SCOREFILE
-    register int cnt;
-    static struct stat sbuf;
-    time_t time();
-
-over:
-    close(8);	/* just in case there are no files left */
-    if (creat(lockfile, 0000) >= 0)
-	return TRUE;
-    for (cnt = 0; cnt < 5; cnt++)
-    {
-	sleep(1);
-	if (creat(lockfile, 0000) >= 0)
-	    return TRUE;
-    }
-    if (stat(lockfile, &sbuf) < 0)
-    {
-	creat(lockfile, 0000);
-	return TRUE;
-    }
-    if (time(NULL) - sbuf.st_mtime > 10)
-    {
-	if (unlink(lockfile) < 0)
-	    return FALSE;
-	goto over;
-    }
-    else
-    {
-	printf("The score file is very busy.  Do you want to wait longer\n");
-	printf("for it to become free so your score can get posted?\n");
-	printf("If so, type \"y\"\n");
-	fgets(prbuf, MAXSTR, stdin);
-	if (prbuf[0] == 'y')
-	    for (;;)
-	    {
-		if (creat(lockfile, 0000) >= 0)
-		    return TRUE;
-		if (stat(lockfile, &sbuf) < 0)
-		{
-		    creat(lockfile, 0000);
-		    return TRUE;
-		}
-		if (time(NULL) - sbuf.st_mtime > 10)
-		{
-		    if (unlink(lockfile) < 0)
-			return FALSE;
-		}
-		sleep(1);
-	    }
-	else
-	    return FALSE;
-    }
+#ifdef DEBUG
+	return ++dnum;
+#else
+	/*
+	 * Get Time
+	 */
+	bdos(0x2C);
+	return(regs->cx + regs->dx);
 #endif
 }
 
-/*
- * unlock_sc:
- *	Unlock the score file
- */
-unlock_sc()
-{
-#ifdef SCOREFILE
-    unlink(lockfile);
-#endif
-}
 
 /*
  * flush_type:
@@ -391,16 +74,222 @@ unlock_sc()
  */
 flush_type()
 {
-    register int flag;
+#ifdef CRASH_MACHINE
+	regs->ax = 0xc06;		/* clear keyboard input */
+	regs->dx = 0xff;		/* set input flag */
+	swint(SW_DOS, regs);
+#endif CRASH_MACHINE
+	typeahead = "";
+}
 
-#ifndef	attron
-    flag = _tty.sg_flags;
-    _tty.sg_flags |= RAW;
-    stty(_tty_ch, &_tty);
-    _tty.sg_flags = flag;
-    stty(_tty_ch, &_tty);
-#else	attron
-    noraw();
-    raw();
-#endif	attron
+credits()
+{
+	int i;
+	char tname[25];
+
+	cursor(FALSE);
+	clear();
+	if (is_color)
+	    brown();
+	box(0,0,LINES-1,COLS-1);
+	bold();
+	center(2,"ROGUE:  The Adventure Game");
+	ULINE();
+	center(4,"The game of Rogue was designed by:");
+	high();
+	center(6,"Michael Toy and Glenn Wichman");
+	ULINE();
+	center(9,"Various implementations by:");
+	high();
+	center(11,"Ken Arnold, Jon Lane and Michael Toy");
+	ULINE();
+#ifdef INTL
+	center(14,"International Versions by:");
+#else
+	center(14,"Adapted for the IBM PC by:");
+#endif
+	high();
+#ifdef INTL
+	center(16,"Mel Sibony");
+#else
+	center(16,"A.I. Design");
+#endif
+	ULINE();
+	if (is_color)
+	    yellow();
+	center(19,"(C)Copyright 1985");
+	high();
+#ifdef INTL
+	center(20,"AI Design");
+#else
+	center(20,"Epyx Incorporated");
+#endif
+    standend();
+	if (is_color)
+	    yellow();
+	center(21,"All Rights Reserved");
+	if (is_color)
+		brown();
+	for(i=1;i<(COLS-1);i++) {
+		move(22,i);
+		putchr(205);
+	}
+	mvaddch(22,0,204);
+	mvaddch(22,COLS-1,185);
+	standend();
+	mvaddstr(23,2,"Rogue's Name? ");
+	is_saved = TRUE;		/*  status line hack  */
+	high();
+	getinfo(tname,23);
+	if (*tname && *tname != ESCAPE) 
+		strcpy(whoami, tname);
+	is_saved = FALSE;
+	blot_out(23,0,24,COLS-1);
+	if (is_color)
+	    brown();
+	mvaddch(22,0,0xc8);
+	mvaddch(22,COLS-1,0xbc);
+	standend();
+}
+
+/*
+ * Table for IBM extended key translation
+ */
+static struct xlate {
+	byte keycode, keyis;
+} xtab[] = {
+	C_HOME, 'y', C_UP,	'k', C_PGUP,'u', C_LEFT,	'h', C_RIGHT,	'l',
+	C_END,	'b', C_DOWN,'j', C_PGDN,'n', C_INS,		'>', C_DEL,		's',
+	C_F1,	'?', C_F2,	'/', C_F3,	'a', C_F4,	CTRL(R), C_F5,		'c',
+	C_F6,	'D', C_F7,	'i', C_F8,	'^', C_F9,	CTRL(F), C_F10,		'!',
+	ALT_F9,	'F'
+};
+
+/*
+ * readchar:
+ *	Return the next input character, from the macro or from the keyboard.
+ */
+readchar()
+{
+	register struct xlate *x;
+	register byte ch;
+		
+    if (*typeahead) {
+        SIG2();
+        return(*typeahead++);
+    }
+    /*
+     * while there are no characters in the type ahead buffer
+     * update the status line at the bottom of the screen
+     */
+    do
+        SIG2();				/* Rogue spends a lot of time here */
+    while (no_char());
+	/*
+	 * Now read a character and translate it if it appears in the
+	 * translation table
+	 */
+	for (ch = getch(), x = xtab; x < xtab + (sizeof xtab) / sizeof *xtab; x++)
+		if (ch == x->keycode) {
+			ch = x->keyis;
+			break;
+		}
+    if (ch == ESCAPE)
+        count = 0;
+    return ch;
+}
+
+bdos(fnum, dxval)
+	int fnum, dxval;
+{
+	register struct sw_regs *saveptr;
+
+	regs->ax = fnum << 8;
+	regs->bx = regs->cx = 0;
+	regs->dx = dxval;
+	saveptr = regs;
+	swint(SW_DOS,regs);
+	regs = saveptr;
+	return(0xff & regs->ax);
+}
+
+/*
+ *  newmem - memory allocater
+ *         - motto: allocate or die trying
+ */
+newmem(nbytes,clrflag)
+	unsigned nbytes;
+	int clrflag;
+{
+	register char *newaddr;
+
+	newaddr = sbrk(nbytes);
+	if (newaddr == -1)
+		fatal("No Memory");
+	end_mem = newaddr + nbytes;
+	if ((unsigned)end_mem & 1)
+		end_mem = sbrk(1);
+	return(newaddr);
+}
+
+#define PC	0xff
+#define XT  0xfe
+#define JR  0xfd
+#define AT	0xfc
+
+isjr()
+{
+	static int machine = 0;
+
+	if (machine == 0) {
+		dmain(&machine,1,0xf000,0xfffe);
+		machine &= 0xff;
+	}
+	return machine == JR;
+}
+
+swint(intno, rp)
+int intno;
+struct sw_regs *rp;
+{
+	extern int _dsval;
+
+	rp->ds = rp->es = _dsval;
+	sysint(intno, rp, rp);
+	return rp->ax;
+}
+
+set_ctrlb(state)
+{
+	struct sw_regs rg;
+	int retcode;
+
+	rg.ax = 0x3300;
+	swint(SW_DOS,&rg);
+	retcode = rg.dx &0xFF;
+
+	rg.ax = 0x3300;
+	rg.dx = (state) ? 1 : 0;
+	swint(SW_DOS,&rg);
+
+	return retcode;
+}
+
+unsetup()
+{
+	set_ctrlb(ocb);
+}
+
+one_tick()
+{
+	extern int tick;
+	int otick = tick;
+	int i=0,j=0;
+
+	while(i++)
+		while (j++)
+			if (otick != tick)
+				return;
+			else if (i > 2)
+				_halt();
 }

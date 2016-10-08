@@ -2,12 +2,11 @@
  * Functions to implement the various sticks one might find
  * while wandering around the dungeon.
  *
- * @(#)sticks.c	4.27 (NMT from Berkeley 5.2) 8/25/83
+ * @(#)sticks.c		1.2 (AI Design)		2/12/84
  */
 
-#include <curses.h>
-#include <ctype.h>
 #include "rogue.h"
+#include "curses.h"
 
 /*
  * fix_stick:
@@ -22,12 +21,15 @@ register THING *cur;
 	cur->o_damage = "1d1";
     cur->o_hurldmg = "1d1";
 
+    cur->o_charges = 3 + rnd(5);
     switch (cur->o_which)
     {
+	when WS_HIT:
+	    cur->o_hplus = 100;
+	    cur->o_dplus = 3;
+	    cur->o_damage = "1d8";
 	when WS_LIGHT:
-	    cur->o_charges = rnd(10) + 10;
-	otherwise:
-	    cur->o_charges = rnd(5) + 3;
+	    cur->o_charges = 10 + rnd(10);
     }
 }
 
@@ -37,44 +39,54 @@ register THING *cur;
  */
 do_zap()
 {
-    register THING *obj, *tp;
+    THING *obj;
+    THING *tp;
     register int y, x;
     register char *name;
+    int which_one;
 
     if ((obj = get_item("zap with", STICK)) == NULL)
-	return;
+	    return;
+    which_one = obj->o_which;
     if (obj->o_type != STICK)
     {
-	after = FALSE;
-	msg("you can't zap with that!");
-	return;
+	if (obj->o_enemy && obj->o_charges)
+	    which_one = MAXSTICKS;
+	else
+	{
+	    msg("you can't zap with that!");
+	    after = FALSE;
+	    return;
+	}
     }
     if (obj->o_charges == 0)
     {
 	msg("nothing happens");
 	return;
     }
-    switch (obj->o_which)
+    switch (which_one)
     {
 	when WS_LIGHT:
 	    /*
 	     * Reddy Kilowat wand.  Light up the room
 	     */
-	    ws_know[WS_LIGHT] = TRUE;
-	    if (proom->r_flags & ISGONE)
-		msg("the corridor glows and then fades");
-	    else
+	    if (on(player,ISBLIND))
+	    	msg("you feel a warm glow around you");
+	    else 
+	    {
+		ws_know[WS_LIGHT] = TRUE;
+	        if (proom->r_flags & ISGONE)
+		    msg("the corridor glows and then fades");
+	        else
+		    msg("the room is lit by a shimmering blue light");
+	    }
+	    if (!(proom->r_flags & ISGONE))
 	    {
 		proom->r_flags &= ~ISDARK;
 		/*
 		 * Light the room and put the player back up
 		 */
 		enter_room(&hero);
-		addmsg("the room is lit");
-		if (!terse)
-		    addmsg(" by a shimmering %s light",
-			on(player, ISTrip) ? rnd_color() : "blue");
-		endmsg();
 	    }
 	when WS_DRAIN:
 	    /*
@@ -89,14 +101,15 @@ do_zap()
 	    }
 	    else
 		drain();
-	when WS_INVIS:
-	case WS_POLYMORPH:
+	when WS_POLYMORPH:
 	case WS_TELAWAY:
 	case WS_TELTO:
 	case WS_CANCEL:
+	case MAXSTICKS:			/* Special case for vorpal weapon */
 	{
-	    register char monster, oldch;
+	    register byte monster, oldch;
 	    register int rm;
+	    coord new_yx;
 
 	    y = hero.y;
 	    x = hero.x;
@@ -107,76 +120,78 @@ do_zap()
 	    }
 	    if ((tp = moat(y, x)) != NULL)
 	    {
-		register char omonst;
+		register byte omonst;
 
 		omonst = monster = tp->t_type;
 		if (monster == 'F')
 		    player.t_flags &= ~ISHELD;
-		switch (obj->o_which) {
-		    case WS_INVIS:
-			tp->t_flags |= ISINVIS;
-			if (cansee(y, x))
-			    mvaddch(y, x, tp->t_oldch);
-			break;
-		    case WS_POLYMORPH:
+		if (which_one == MAXSTICKS)
+		{
+		    if (monster == obj->o_enemy)
 		    {
-			register THING *pp;
+			msg("the %s vanishes in a puff of smoke",
+			    monsters[monster-'A'].m_name);
+			killed(tp, FALSE);
+		    }
+		    else
+			msg("you hear a maniacal chuckle in the distance.");
+		}
+		else if (which_one == WS_POLYMORPH)
+		{
+		    register THING *pp;
 
-			pp = tp->t_pack;
-			detach(mlist, tp);
-			if (see_monst(tp))
-			    mvaddch(y, x, chat(y, x));
-			oldch = tp->t_oldch;
-			delta.y = y;
-			delta.x = x;
-			new_monster(tp, monster = rnd(26) + 'A', &delta);
-			if (see_monst(tp))
-			    mvaddch(y, x, monster);
-			tp->t_oldch = oldch;
-			tp->t_pack = pp;
-			ws_know[WS_POLYMORPH] |= (monster != omonst);
-			break;
-		    }
-		    case WS_CANCEL:
-			tp->t_flags |= ISCANC;
-			tp->t_flags &= ~(ISINVIS|CANHUH);
-			tp->t_disguise = tp->t_type;
-			if (see_monst(tp))
-			    mvaddch(y, x, tp->t_disguise);
-			break;
-		    case WS_TELAWAY:
-		    case WS_TELTO:
+		    pp = tp->t_pack;
+		    detach(mlist, tp);
+		    if (see_monst(tp))
+			mvaddch(y, x, chat(y, x));
+		    oldch = tp->t_oldch;
+		    delta.y = y;
+		    delta.x = x;
+		    new_monster(tp, monster = rnd(26) + 'A', &delta);
+		    if (see_monst(tp))
+			mvaddch(y, x, monster);
+		    tp->t_oldch = oldch;
+		    tp->t_pack = pp;
+		    ws_know[WS_POLYMORPH] |= (monster != omonst);
+		}
+		else if (which_one == WS_CANCEL)
+		{
+		    tp->t_flags |= ISCANC;
+		    tp->t_flags &= ~(ISINVIS|CANHUH);
+		    tp->t_disguise = tp->t_type;
+		}
+		else
+		{
+		    if (see_monst(tp))
+			mvaddch(y, x, tp->t_oldch);
+		    if (which_one == WS_TELAWAY)
 		    {
+		    	tp->t_oldch = '@';
+			do
+			{
+			    rm = rnd_room();
+			    new_yx = tp->t_pos;
+			    rnd_pos(&rooms[rm], &new_yx);
+			}  while (!(isfloor(winat(new_yx.y, new_yx.x))));
+			tp->t_pos = new_yx;
 			if (see_monst(tp))
-			    mvaddch(y, x, tp->t_oldch);
-			if (obj->o_which == WS_TELAWAY)
+			    mvaddch(tp->t_pos.y, tp->t_pos.x, tp->t_disguise);
+			else if (on(player, SEEMONST))
 			{
-			    do
-			    {
-				rm = rnd_room();
-				rnd_pos(&rooms[rm], &tp->t_pos);
-			    } until (winat(tp->t_pos.y, tp->t_pos.x) == FLOOR);
-			    if (see_monst(tp))
-				mvaddch(tp->t_pos.y, tp->t_pos.x, tp->t_disguise);
-			    else if (on(player, SEEMONST))
-			    {
-				standout();
-				mvaddch(tp->t_pos.y, tp->t_pos.x, tp->t_disguise);
-				standend();
-			    }
+			    standout();
+			    mvaddch(tp->t_pos.y, tp->t_pos.x, tp->t_disguise);
+			    standend();
 			}
-			else
-			{
-			    tp->t_pos.y = hero.y + delta.y;
-			    tp->t_pos.x = hero.x + delta.x;
-			}
-			moat(y, x) = NULL;
-			moat(tp->t_pos.y, tp->t_pos.x) = tp;
-			if (tp->t_type == 'F')
-			    player.t_flags &= ~ISHELD;
-			if (tp->t_pos.y != y || tp->t_pos.x != x)
-			    tp->t_oldch = mvinch(tp->t_pos.y, tp->t_pos.x);
 		    }
+		    else /* it MUST BE at WS_TELTO */
+		    {
+			tp->t_pos.y = hero.y + delta.y;
+			tp->t_pos.x = hero.x + delta.x;
+		    }
+		    if (tp->t_type == 'F')
+			player.t_flags &= ~ISHELD;
+		    if (tp->t_pos.y != y || tp->t_pos.x != x)
+			tp->t_oldch = mvinch(tp->t_pos.y, tp->t_pos.x);
 		}
 		tp->t_dest = &hero;
 		tp->t_flags |= ISRUN;
@@ -188,8 +203,8 @@ do_zap()
 
 	    ws_know[WS_MISSILE] = TRUE;
 	    bolt.o_type = '*';
-	    bolt.o_hurldmg = "1d4";
-	    bolt.o_hplus = 100;
+	    bolt.o_hurldmg = "1d8";
+	    bolt.o_hplus = 1000;
 	    bolt.o_dplus = 1;
 	    bolt.o_flags = ISMISL;
 	    if (cur_weapon != NULL)
@@ -197,11 +212,26 @@ do_zap()
 	    do_motion(&bolt, delta.y, delta.x);
 	    if ((tp = moat(bolt.o_pos.y, bolt.o_pos.x)) != NULL && !save_throw(VS_MAGIC, tp))
 		    hit_monster(unc(bolt.o_pos), &bolt);
-	    else if (terse)
-		msg("missle vanishes");
-	    else
+	    else 
 		msg("the missle vanishes with a puff of smoke");
 	}
+	when WS_HIT:
+	    delta.y += hero.y;
+	    delta.x += hero.x;
+	    if ((tp = moat(delta.y, delta.x)) != NULL)
+	    {
+		if (rnd(20) == 0)
+		{
+		    obj->o_damage = "3d8";
+		    obj->o_dplus = 9;
+		}
+		else
+		{
+		    obj->o_damage = "2d8";
+		    obj->o_dplus = 4;
+		}
+		fight(&delta, tp->t_type, obj, FALSE);
+	    }
 	when WS_HASTE_M:
 	case WS_SLOW_M:
 	    y = hero.y;
@@ -213,7 +243,7 @@ do_zap()
 	    }
 	    if ((tp = moat(y, x)) != NULL)
 	    {
-		if (obj->o_which == WS_HASTE_M)
+		if (which_one == WS_HASTE_M)
 		{
 		    if (on(*tp, ISSLOW))
 			tp->t_flags &= ~ISSLOW;
@@ -230,38 +260,40 @@ do_zap()
 		}
 		delta.y = y;
 		delta.x = x;
-		runto(&delta);
+		start_run(&delta);
 	    }
 	when WS_ELECT:
 	case WS_FIRE:
 	case WS_COLD:
-	    if (obj->o_which == WS_ELECT)
+	    if (which_one == WS_ELECT)
 		name = "bolt";
-	    else if (obj->o_which == WS_FIRE)
+	    else if (which_one == WS_FIRE)
 		name = "flame";
 	    else
 		name = "ice";
 	    fire_bolt(&hero, &delta, name);
-	    ws_know[obj->o_which] = TRUE;
-	when WS_NOP:
+	    ws_know[which_one] = TRUE;
+#ifdef DEBUG
 	otherwise:
 	    msg("what a bizarre schtick!");
+#endif
     }
-    obj->o_charges--;
+    if (--obj->o_charges < 0)
+		obj->o_charges = 0;
 }
 
 /*
  * drain:
- *	Do drain hit points from player shtick
+ *	Do drain hit points from player schtick
  */
 drain()
 {
-    register THING *mp;
+    THING *mp;
     register int cnt;
     register struct room *corp;
     register THING **dp;
     register bool inpass;
-    static THING *drainee[40];
+    THING *drainee[40];
 
     /*
      * First cnt how many things we need to spread the hit points among
@@ -285,7 +317,7 @@ drain()
     }
     *dp = NULL;
     pstats.s_hpt /= 2;
-    cnt = pstats.s_hpt / cnt;
+    cnt = pstats.s_hpt / cnt + 1;
     /*
      * Now zot all of the monsters
      */
@@ -295,7 +327,7 @@ drain()
 	if ((mp->t_stats.s_hpt -= cnt) <= 0)
 	    killed(mp, see_monst(mp));
 	else
-	    runto(&mp->t_pos);
+	    start_run(&mp->t_pos);
     }
 }
 
@@ -307,115 +339,113 @@ fire_bolt(start, dir, name)
 coord *start, *dir;
 char *name;
 {
-    register char dirch, ch;
+    register byte dirch, ch;
     register THING *tp;
     register bool hit_hero, used, changed;
     register int i, j;
     coord pos;
-    coord spotpos[BOLT_LENGTH];
+	struct {
+		coord s_pos;
+		byte s_under;
+	} spotpos[BOLT_LENGTH*2];
     THING bolt;
+    bool is_frost;
 
+    is_frost = (strcmp(name, "frost") == 0);
     bolt.o_type = WEAPON;
     bolt.o_which = FLAME;
-    bolt.o_hurldmg = "6d6";
-    bolt.o_hplus = 100;
+    bolt.o_damage = bolt.o_hurldmg = "6d6";
+    bolt.o_hplus = 30;
     bolt.o_dplus = 0;
     w_names[FLAME] = name;
-    switch (dir->y + dir->x)
-    {
+    switch (dir->y + dir->x) {
 	when 0: dirch = '/';
 	when 1: case -1: dirch = (dir->y == 0 ? '-' : '|');
 	when 2: case -2: dirch = '\\';
     }
-    pos = *start;
+	pos = *start;
     hit_hero = (start != &hero);
     used = FALSE;
     changed = FALSE;
-    for (i = 0; i < BOLT_LENGTH && !used; i++)
-    {
-	pos.y += dir->y;
-	pos.x += dir->x;
-	ch = winat(pos.y, pos.x);
-	spotpos[i] = pos;
-	switch (ch)
-	{
+    for (i = 0; i < BOLT_LENGTH && !used; i++) {
+		pos.y += dir->y;
+		pos.x += dir->x;
+		ch = winat(pos.y, pos.x);
+		spotpos[i].s_pos = pos;
+		if ((spotpos[i].s_under = mvinch(pos.y, pos.x)) == dirch)
+			spotpos[i].s_under = 0;
+		switch (ch) {
 	    case DOOR:
-		/*
-		 * this code is necessary if the hero is on a door
-		 * and he fires at the wall the door is in, it would
-		 * otherwise loop infinitely
-		 */
-		if (ce(hero, pos))
-		    goto def;
-		/* FALLTHROUGH */
-	    case '|':
-	    case '-':
+	    case HWALL:
+	    case VWALL:
+	    case ULWALL:
+	    case URWALL:
+	    case LLWALL:
+	    case LRWALL:
 	    case ' ':
-		if (!changed)
-		    hit_hero = !hit_hero;
-		changed = FALSE;
-		dir->y = -dir->y;
-		dir->x = -dir->x;
-		i--;
-		msg("the %s bounces", name);
-		break;
+			if (!changed)
+			    hit_hero = !hit_hero;
+			changed = FALSE;
+			dir->y = -dir->y;
+			dir->x = -dir->x;
+			i--;
+			msg("the %s bounces", name);
+			break;
 	    default:
-def:
-		if (!hit_hero && (tp = moat(pos.y, pos.x)) != NULL)
-		{
-		    hit_hero = TRUE;
-		    changed = !changed;
-		    tp->t_oldch = chat(pos.y, pos.x);
-		    if (!save_throw(VS_MAGIC, tp))
-		    {
-			bolt.o_pos = pos;
-			used = TRUE;
-			if (tp->t_type == 'D' && strcmp(name, "flame") == 0)
-			{
-			    addmsg("the flame bounces");
-			    if (!terse)
-				msg("off the dragon");
-			    endmsg();
+			if (!hit_hero && (tp = moat(pos.y, pos.x)) != NULL) {
+			    hit_hero = TRUE;
+			    changed = !changed;
+			    if (tp->t_oldch != '@')
+			        tp->t_oldch = chat(pos.y, pos.x);
+			    if (!save_throw(VS_MAGIC, tp) || is_frost) {
+					bolt.o_pos = pos;
+					used = TRUE;
+					if (tp->t_type == 'D' && strcmp(name, "flame") == 0)
+					    msg("the flame bounces off the dragon");
+					else {
+					    hit_monster(unc(pos), &bolt);
+						if (mvinch(unc(pos)) != dirch)
+							spotpos[i].s_under = mvinch(unc(pos));
+					}
+			    } else if (ch != 'X' || tp->t_disguise == 'X') {
+					if (start == &hero)
+					    start_run(&pos);
+					msg("the %s whizzes past the %s", 
+						name, monsters[ch-'A'].m_name);
+			    }
+			} else if (hit_hero && ce(pos, hero)) {
+			    hit_hero = FALSE;
+			    changed = !changed;
+			    if (!save(VS_MAGIC)) {
+			    	if (is_frost) {
+					    msg("You are frozen by a blast of frost%s.", noterse(" from the Ice Monster"));
+			    	    if (no_command < 20)
+							no_command += spread(7);
+			    	} else if ((pstats.s_hpt -= roll(6, 6)) <= 0)
+					    if (start == &hero)
+							death('b');
+					    else
+							death(moat(start->y, start->x)->t_type);
+					used = TRUE;
+					if (!is_frost)
+					    msg("you are hit by the %s", name);
+			    } else
+					msg("the %s whizzes by you", name);
 			}
+			if (is_frost)
+				blue();
 			else
-			    hit_monster(unc(pos), &bolt);
-		    }
-		    else if (ch != 'M' || tp->t_disguise == 'M')
-		    {
-			if (start == &hero)
-			    runto(&pos);
-			if (terse)
-			    msg("%s misses", name);
-			else
-			    msg("the %s whizzes past the %s", name, monsters[ch-'A'].m_name);
-		    }
+				red();
+			tick_pause();
+			mvaddch(pos.y, pos.x, dirch);
+			standend();
 		}
-		else if (hit_hero && ce(pos, hero))
-		{
-		    hit_hero = FALSE;
-		    changed = !changed;
-		    if (!save(VS_MAGIC))
-		    {
-			if ((pstats.s_hpt -= roll(6, 6)) <= 0)
-			    if (start == &hero)
-				death('b');
-			    else
-				death(moat(start->y, start->x)->t_type);
-			used = TRUE;
-			if (terse)
-			    msg("the %s hits", name);
-			else
-			    msg("you are hit by the %s", name);
-		    }
-		    else
-			msg("the %s whizzes by you", name);
-		}
-		mvaddch(pos.y, pos.x, dirch);
-		refresh();
-	}
     }
-    for (j = 0; j < i; j++)
-	mvaddch(spotpos[j].y, spotpos[j].x, chat(spotpos[j].y, spotpos[j].x));
+    for (j = 0; j < i; j++) {
+		tick_pause();
+		if (spotpos[j].s_under)
+			mvaddch(spotpos[j].s_pos.y, spotpos[j].s_pos.x, spotpos[j].s_under);
+	}
 }
 
 /*
@@ -430,9 +460,8 @@ register THING *obj;
 
     if (!(obj->o_flags & ISKNOW))
 	buf[0] = '\0';
-    else if (terse)
-	sprintf(buf, " [%d]", obj->o_charges);
-    else
+    else 
 	sprintf(buf, " [%d charges]", obj->o_charges);
     return buf;
 }
+

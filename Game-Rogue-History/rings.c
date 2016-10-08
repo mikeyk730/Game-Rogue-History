@@ -1,13 +1,12 @@
-#include <curses.h>
-#include "rogue.h"
-
 /*
  * Routines dealing specifically with rings
  *
- * @(#)rings.c	4.14 (NMT from Berkeley 5.2) 8/25/83
+ * rings.c		1.4 (AI Design)		12/13/84
  */
 
-char *malloc();
+#include "rogue.h"
+#include "curses.h"
+
 
 /*
  * ring_on:
@@ -16,53 +15,41 @@ char *malloc();
 ring_on()
 {
     register THING *obj;
-    register int ring;
+    register int ring = -1;
 
-    obj = get_item("put on", RING);
+    if ((obj = get_item("put on", RING)) == NULL)
+		goto no_ring;
     /*
      * Make certain that it is somethings that we want to wear
      */
-    if (obj == NULL)
-	return;
-    if (obj->o_type != RING)
-    {
-	if (!terse)
-	    msg("it would be difficult to wrap that around a finger");
-	else
-	    msg("not a ring");
-	return;
+    if (obj->o_type != RING) {
+		msg("you can't put that on your finger");
+		goto no_ring;
     }
 
     /*
      * find out which hand to put it on
      */
     if (is_current(obj))
-	return;
+		goto no_ring;
 
+    if (cur_ring[LEFT] == NULL)
+		ring = LEFT;
+    if (cur_ring[RIGHT] == NULL)
+		ring = RIGHT;
     if (cur_ring[LEFT] == NULL && cur_ring[RIGHT] == NULL)
-    {
-	if ((ring = gethand()) < 0)
-	    return;
-    }
-    else if (cur_ring[LEFT] == NULL)
-	ring = LEFT;
-    else if (cur_ring[RIGHT] == NULL)
-	ring = RIGHT;
-    else
-    {
-	if (!terse)
-	    msg("you already have a ring on each hand");
-	else
-	    msg("wearing two");
-	return;
+		if ((ring = gethand()) < 0)
+		    goto no_ring;
+    if (ring < 0) {
+		msg("you already have a ring on each hand");
+		goto no_ring;
     }
     cur_ring[ring] = obj;
 
     /*
      * Calculate the effect it has on the poor guy.
      */
-    switch (obj->o_which)
-    {
+    switch (obj->o_which) {
 	case R_ADDSTR:
 	    chg_str(obj->o_ac);
 	    break;
@@ -74,9 +61,12 @@ ring_on()
 	    break;
     }
 
-    if (!terse)
-	addmsg("you are now wearing ");
-    msg("%s (%c)", inv_name(obj, TRUE), pack_char(obj));
+    msg("%swearing %s (%c)", noterse("you are now "), inv_name(obj, TRUE), pack_char(obj));
+    return ;
+
+no_ring:
+    after = FALSE;
+    return;
 }
 
 /*
@@ -89,31 +79,27 @@ ring_off()
     register THING *obj;
     register char packchar;
 
-    if (cur_ring[LEFT] == NULL && cur_ring[RIGHT] == NULL)
-    {
-	if (terse)
-	    msg("no rings");
-	else
-	    msg("you aren't wearing any rings");
-	return;
-    }
-    else if (cur_ring[LEFT] == NULL)
-	ring = RIGHT;
+    if (cur_ring[LEFT] == NULL && cur_ring[RIGHT] == NULL) {
+		msg("you aren't wearing any rings");
+		after = FALSE;
+		return;
+    } else if (cur_ring[LEFT] == NULL)
+		ring = RIGHT;
     else if (cur_ring[RIGHT] == NULL)
-	ring = LEFT;
+		ring = LEFT;
     else
-	if ((ring = gethand()) < 0)
-	    return;
+		if ((ring = gethand()) < 0)
+		    return;
     mpos = 0;
     obj = cur_ring[ring];
-    if (obj == NULL)
-    {
-	msg("not wearing such a ring");
-	return;
+    if (obj == NULL) {
+		msg("not wearing such a ring");
+		after = FALSE;
+		return;
     }
     packchar = pack_char(obj);
-    if (dropcheck(obj))
-	msg("was wearing %s(%c)", inv_name(obj, TRUE), packchar);
+    if (can_drop(obj))
+		msg("was wearing %s(%c)", inv_name(obj, TRUE), packchar);
 }
 
 /*
@@ -124,23 +110,18 @@ gethand()
 {
     register int c;
 
-    for (;;)
-    {
-	if (terse)
-	    msg("left or right ring? ");
-	else
-	    msg("left hand or right hand? ");
-	if ((c = readchar()) == ESCAPE)
-	    return -1;
-	mpos = 0;
-	if (c == 'l' || c == 'L')
-	    return LEFT;
-	else if (c == 'r' || c == 'R')
-	    return RIGHT;
-	if (terse)
-	    msg("L or R");
-	else
-	    msg("please type L or R");
+    for (;;) {
+		msg("left hand or right hand? ");
+		if ((c = readchar()) == ESCAPE)  {
+		    after = FALSE;
+		    return -1;
+		}
+		mpos = 0;
+		if (c == 'l' || c == 'L')
+		    return LEFT;
+		else if (c == 'r' || c == 'R')
+		    return RIGHT;
+		msg("please type L or R");
     }
 }
 
@@ -152,9 +133,8 @@ ring_eat(hand)
 register int hand;
 {
     if (cur_ring[hand] == NULL)
-	return 0;
-    switch (cur_ring[hand]->o_which)
-    {
+		return 0;
+    switch (cur_ring[hand]->o_which) {
 	case R_REGEN:
 	    return 2;
 	case R_SUSTSTR:
@@ -164,6 +144,7 @@ register int hand;
 	case R_STEALTH:
 	    return 1;
 	case R_SEARCH:
+	    return(rnd(5)==0);
 	case R_ADDHIT:
 	case R_ADDDAM:
 	    return (rnd(3) == 0);
@@ -184,20 +165,19 @@ char *
 ring_num(obj)
 register THING *obj;
 {
-    static char buf[5];
+    extern char *ring_buf;
 
     if (!(obj->o_flags & ISKNOW))
-	return "";
-    switch (obj->o_which)
-    {
+		return "";
+    switch (obj->o_which) {
 	when R_PROTECT:
 	case R_ADDSTR:
 	case R_ADDDAM:
 	case R_ADDHIT:
-	    buf[0] = ' ';
-	    strcpy(&buf[1], num(obj->o_ac, 0, RING));
+	    ring_buf[0] = ' ';
+	    strcpy(&ring_buf[1], num(obj->o_ac, 0, RING));
 	otherwise:
 	    return "";
     }
-    return buf;
+    return ring_buf;
 }

@@ -3,74 +3,59 @@
  * Special wizard commands (some of which are also non-wizard commands
  * under strange circumstances)
  *
- * @(#)wizard.c	4.16 (NMT from Berkeley 5.2) 8/25/83
+ * wizard.c	1.4 (AI Design)	12/14/84
  */
 
-#include <curses.h>
-#include <ctype.h>
 #include "rogue.h"
+#include "curses.h"
 
 /*
  * whatis:
  *	What a certin object is
  */
-whatis(insist)
-bool insist;
+whatis()
 {
     register THING *obj;
 
-    if (pack == NULL)
-    {
-	msg("You don't have anything in your pack to identify");
-	return;
+    if (pack == NULL) {
+		msg("You don't have anything in your pack to identify");
+		return;
     }
 
     for (;;)
-	if ((obj = get_item("identify", 0)) == NULL && insist)
-	    msg("You must identify something");
-	else
-	    break;
+		if ((obj = get_item("identify", 0)) == NULL) {
+			msg("You must identify something");
+			msg(" ");
+			mpos = 0;
+		} else
+		    break;
 
-    if (!insist && obj == NULL)
-	return;
-
-    switch (obj->o_type)
-    {
+	    switch (obj->o_type) {
         when SCROLL:
-	    s_know[obj->o_which] = TRUE;
-	    if (s_guess[obj->o_which])
-	    {
-		cfree(s_guess[obj->o_which]);
-		s_guess[obj->o_which] = NULL;
-	    }
+		    s_know[obj->o_which] = TRUE;
+		    *s_guess[obj->o_which] = NULL;
         when POTION:
-	    p_know[obj->o_which] = TRUE;
-	    if (p_guess[obj->o_which])
-	    {
-		cfree(p_guess[obj->o_which]);
-		p_guess[obj->o_which] = NULL;
-	    }
-	when STICK:
-	    ws_know[obj->o_which] = TRUE;
-	    obj->o_flags |= ISKNOW;
-	    if (ws_guess[obj->o_which])
-	    {
-		cfree(ws_guess[obj->o_which]);
-		ws_guess[obj->o_which] = NULL;
-	    }
+		    p_know[obj->o_which] = TRUE;
+		    *p_guess[obj->o_which] = NULL;
+		when STICK:
+		    ws_know[obj->o_which] = TRUE;
+		    obj->o_flags |= ISKNOW;
+		    *ws_guess[obj->o_which] = NULL;
         when WEAPON:
         case ARMOR:
-	    obj->o_flags |= ISKNOW;
+		    obj->o_flags |= ISKNOW;
         when RING:
-	    r_know[obj->o_which] = TRUE;
-	    obj->o_flags |= ISKNOW;
-	    if (r_guess[obj->o_which])
-	    {
-		cfree(r_guess[obj->o_which]);
-		r_guess[obj->o_which] = NULL;
+		    r_know[obj->o_which] = TRUE;
+		    obj->o_flags |= ISKNOW;
+		    *r_guess[obj->o_which] = NULL;
 	    }
-    }
-    msg(inv_name(obj, FALSE));
+	    /*
+	     * If it is vorpally enchanted, then reveal what type of monster it is
+	     * vorpally enchanted against
+	     */
+	    if (obj->o_enemy)
+			obj->o_flags |= ISREVEAL;
+	    msg(inv_name(obj, FALSE));
 }
 
 #ifdef WIZARD
@@ -80,17 +65,32 @@ bool insist;
  */
 create_obj()
 {
-    register THING *obj;
-    register char ch, bless;
+    THING *obj;
+    byte ch, bless;
 
-    obj = new_item();
+    if ((obj = new_item()) == NULL)
+    {
+        msg("can't create anything now");
+        return;
+    }
     msg("type of item: ");
-    obj->o_type = readchar();
+	switch (readchar()) {
+		when '!': obj->o_type = POTION;
+		when '?': obj->o_type = SCROLL;
+		when '/': obj->o_type = STICK;
+		when '=': obj->o_type = RING;
+		when ')': obj->o_type = WEAPON;
+		when ']': obj->o_type = ARMOR;
+		when ',': obj->o_type = AMULET;
+		otherwise:
+			obj->o_type = FOOD;
+	}
     mpos = 0;
     msg("which %c do you want? (0-f)", obj->o_type);
     obj->o_which = (isdigit((ch = readchar())) ? ch - '0' : ch - 'a' + 10);
     obj->o_group = 0;
     obj->o_count = 1;
+    obj->o_damage = obj->o_hurldmg = "0d0";
     mpos = 0;
     if (obj->o_type == WEAPON || obj->o_type == ARMOR)
     {
@@ -158,16 +158,16 @@ teleport()
     {
 	rm = rnd_room();
 	rnd_pos(&rooms[rm], &c);
-    } until (step_ok(winat(c.y, c.x)));
+    } while (!(step_ok(winat(c.y, c.x))));
     if (&rooms[rm] != proom)
     {
 	leave_room(&hero);
-	hero = c;
+	bcopy(hero,c);
 	enter_room(&hero);
     }
     else
     {
-	hero = c;
+	bcopy(hero,c);
 	look(TRUE);
     }
     mvaddch(hero.y, hero.x, PLAYER);
@@ -177,15 +177,32 @@ teleport()
      */
     if (on(player, ISHELD)) {
 	player.t_flags &= ~ISHELD;
-	fung_hit = 0;
-	strcpy(monsters['F'-'A'].m_stats.s_dmg, "000d0");
+	f_restor();
     }
     no_move = 0;
     count = 0;
     running = FALSE;
     flush_type();
+    /*
+     * Teleportation can be a confusing experience
+     * (unless you really are a wizard)
+     */
+#ifdef WIZARD
+    if (!wizard)
+    {
+#endif WIZARD
+	if (on(player, ISHUH))
+	    lengthen(unconfuse, rnd(4)+2);
+	else
+	    fuse(unconfuse, 0, rnd(4)+2);
+	player.t_flags |= ISHUH;
+#ifdef WIZARD
+    }
+#endif WIZARD
+    return rm;
 }
 
+#ifdef UNIX
 #ifdef WIZARD
 /*
  * passwd:
@@ -200,26 +217,22 @@ passwd()
     mpos = 0;
     sp = buf;
     while ((c = getchar()) != '\n' && c != '\r' && c != ESCAPE)
-#ifndef attron
 	if (c == _tty.sg_kill)
-#else	attron
-	if (c == killchar())
-#endif	attron
 	    sp = buf;
-#ifndef attron
 	else if (c == _tty.sg_erase && sp > buf)
-#else	attron
-	else if ((c == erasechar()) && sp > buf)
-#endif	attron
 	    sp--;
 	else
 	    *sp++ = c;
     if (sp == buf)
 	return FALSE;
     *sp = '\0';
-    return (strcmp("plus5",buf) == 0);
+    return (strcmp(PASSWD, crypt(buf, "mT")) == 0);
 }
 
+#endif
+#endif
+
+#ifdef WIZARD
 /*
  * show_map:
  *	Print out the map for the wizard
@@ -228,17 +241,30 @@ show_map()
 {
     register int y, x, real;
 
+	wdump(0);
     wclear(hw);
-    for (y = 1; y < LINES - 1; y++)
+    for (y = 1; y < maxrow; y++)
 	for (x = 0; x < COLS; x++)
 	{
 	    if (!(real = flat(y, x) & F_REAL))
-		wstandout(hw);
-	    wmove(hw, y, x);
-	    waddch(hw, chat(y, x));
+		standout();
+	    mvaddch(y, x, chat(y, x));
 	    if (!real)
-		wstandend(hw);
+		standend();
 	}
     show_win(hw, "---More (level map)---");
+    wrestor(0);
+}
+
+get_num(place)
+	int *place;
+{
+	char numbuf[12];
+
+	getinfo(numbuf,10);
+	*place = atoi(numbuf);
+	return(*place);
 }
 #endif
+	
+

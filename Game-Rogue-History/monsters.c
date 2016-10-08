@@ -1,31 +1,18 @@
 /*
  * File with various monster functions in it
  *
- * @(#)monsters.c	4.27 (NMT from Berkeley 5.2) 8/25/83
+ * monsters.c	1.4 (A.I. Design)	12/14/84
  */
 
-#include <curses.h>
 #include "rogue.h"
-#include <ctype.h>
+#include "curses.h"
 
 /*
  * List of monsters in rough order of vorpalness
- *
- * NOTE: This not initialized using strings so that xstr doesn't set up
- * the string not to be saved.  Otherwise genocide is lost through
- * saving a game.
  */
-static char lvl_mons[] =  {
-    'K', 'J', 'B', 'S', 'H', 'E', 'A', 'O', 'Z', 'G', 'L', 'C', 'R',
-    'Q', 'N', 'Y', 'T', 'W', 'F', 'I', 'X', 'U', 'M', 'V', 'P', 'D',
-    '\0'
-};
 
-static char wand_mons[] = {
-    'K', 'J', 'B', 'S', 'H', ' ', 'A', 'O', 'Z', 'G', ' ', 'C', 'R',
-    'Q', ' ', 'Y', 'T', 'W', ' ', 'I', 'X', 'U', ' ', 'V', 'P', ' ',
-    '\0'
-};
+static char *lvl_mons =  "K BHISOR LCA NYTWFP GMXVJD";
+static char *wand_mons = "KEBHISORZ CAQ YTW PUGM VJ ";
 
 /*
  * randmonster:
@@ -39,13 +26,14 @@ bool wander;
     register char *mons;
 
     mons = wander ? wand_mons : lvl_mons;
-    do
-    {
-	d = level + (rnd(10) - 5);
-	if (d < 1)
-	    d = rnd(5) + 1;
-	if (d > 26)
-	    d = rnd(5) + 22;
+    do {
+    	int r10 = rnd(5) + rnd(6);
+
+		d = level + (r10 - 5);
+		if (d < 1)
+		    d = rnd(5) + 1;
+		if (d > 26)
+		    d = rnd(5) + 22;
     } while (mons[--d] == ' ');
     return mons[d];
 }
@@ -55,22 +43,21 @@ bool wander;
  *	Pick a new monster and add it to the list
  */
 new_monster(tp, type, cp)
-register THING *tp;
-char type;
-register coord *cp;
+THING *tp;
+byte type;
+coord *cp;
 {
     register struct monster *mp;
     register int lev_add;
 
     if ((lev_add = level - AMULETLEVEL) < 0)
-	lev_add = 0;
+		lev_add = 0;
     attach(mlist, tp);
     tp->t_type = type;
     tp->t_disguise = type;
-    tp->t_pos = *cp;
-    tp->t_oldch = mvinch(cp->y, cp->x);
+    bcopy(tp->t_pos,*cp);
+    tp->t_oldch = '@';
     tp->t_room = roomin(cp);
-    moat(cp->y, cp->x) = tp;
     mp = &monsters[tp->t_type-'A'];
     tp->t_stats.s_lvl = mp->m_stats.s_lvl + lev_add;
     tp->t_stats.s_maxhp = tp->t_stats.s_hpt = roll(tp->t_stats.s_lvl, 8);
@@ -82,10 +69,11 @@ register coord *cp;
     tp->t_turn = TRUE;
     tp->t_pack = NULL;
     if (ISWEARING(R_AGGR))
-	runto(cp);
-    if (type == 'M')
-	switch (rnd(level > 25 ? 9 : 8))
-	{
+		start_run(cp);
+    if (type == 'F') 
+		tp->t_stats.s_dmg = f_damage;
+    if (type == 'X')
+		switch (rnd(level > 25 ? 9 : 8)) {
 	    when 0: tp->t_disguise = GOLD;
 	    when 1: tp->t_disguise = POTION;
 	    when 2: tp->t_disguise = SCROLL;
@@ -99,6 +87,17 @@ register coord *cp;
 }
 
 /*
+ *  f_restor(): restor initial damage string for flytraps
+ */
+ f_restor()
+ {
+    register struct monster *mp = &monsters['F'-'A'];
+
+    fung_hit = 0;
+    strcpy(f_damage, mp->m_stats.s_dmg);
+ }
+
+/*
  * expadd:
  *	Experience to add for this monster's level/hit points
  */
@@ -108,13 +107,13 @@ register THING *tp;
     register int mod;
 
     if (tp->t_stats.s_lvl == 1)
-	mod = tp->t_stats.s_maxhp / 8;
+		mod = tp->t_stats.s_maxhp / 8;
     else
-	mod = tp->t_stats.s_maxhp / 6;
+		mod = tp->t_stats.s_maxhp / 6;
     if (tp->t_stats.s_lvl > 9)
-	mod *= 20;
+		mod *= 20;
     else if (tp->t_stats.s_lvl > 6)
-	mod *= 4;
+		mod *= 4;
     return mod;
 }
 
@@ -124,25 +123,32 @@ register THING *tp;
  */
 wanderer()
 {
-    register int i;
+    int i;
     register struct room *rp;
     register THING *tp;
     coord cp;
 
-    tp = new_item();
-    do
-    {
-	i = rnd_room();
-	if ((rp = &rooms[i]) == proom)
-	    continue;
-	rnd_pos(rp, &cp);
-    } until (rp != proom && step_ok(winat(cp.y, cp.x)));
+	/*
+	 * can we allocate a new monster
+	 */
+    if ((tp = new_item()) == NULL)
+    	return;
+    do {
+		i = rnd_room();
+		if ((rp = &rooms[i]) == proom)
+		    continue;
+		rnd_pos(rp, &cp);
+    } while (!(rp != proom && step_ok(winat(cp.y, cp.x))));
     new_monster(tp, randmonster(TRUE), &cp);
-    runto(&tp->t_pos);
+#ifdef TEST
+    if (bailout && me())
+    	msg("wanderer bailout");
+#endif TEST
 #ifdef WIZARD
     if (wizard)
-	msg("started a wandering %s", monsters[tp->t_type-'A'].m_name);
+    	msg("started a wandering %s", monsters[tp->t_type-'A'].m_name);
 #endif
+    start_run(&tp->t_pos);
 }
 
 /*
@@ -155,103 +161,49 @@ int y, x;
 {
     register THING *tp;
     register struct room *rp;
-    register char ch, *mname;
+    register byte ch;
+	register int dst;
 
-#ifdef WIZARD
     if ((tp = moat(y, x)) == NULL)
-	msg("can't find monster in wake_monster");
-#else
-    tp = moat(y, x);
-#endif
+    	return tp;
     ch = tp->t_type;
     /*
      * Every time he sees mean monster, it might start chasing him
      */
     if (!on(*tp, ISRUN) && rnd(3) != 0 && on(*tp, ISMEAN) && !on(*tp, ISHELD)
-	&& !ISWEARING(R_STEALTH))
+		&& !ISWEARING(R_STEALTH))
     {
-	tp->t_dest = &hero;
-	tp->t_flags |= ISRUN;
+		tp->t_dest = &hero;
+		tp->t_flags |= ISRUN;
     }
-    if (ch == 'U' && !on(player, ISBLIND) && !on(*tp, ISFOUND)
-	&& !on(*tp, ISCANC) && on(*tp, ISRUN))
+    if (ch == 'M' && !on(player, ISBLIND) && !on(*tp, ISFOUND)
+		&& !on(*tp, ISCANC) && on(*tp, ISRUN))
     {
         rp = proom;
-	if ((rp != NULL && !(rp->r_flags & ISDARK))
-	    || DISTANCE(y, x, hero.y, hero.x) < LAMPDIST)
-	{
-	    tp->t_flags |= ISFOUND;
-	    if (!save(VS_MAGIC))
-	    {
-		if (on(player, ISHUH))
-		    lengthen(unconfuse, rnd(20) + HUHDURATION);
-		else
-		    fuse(unconfuse, 0, rnd(20) + HUHDURATION, AFTER);
-		player.t_flags |= ISHUH;
-		if (on(player, ISTrip))
-		    mname = monsters[toascii(mvinch(tp->t_pos.y, tp->t_pos.x))-'A'].m_name;
-		else
-		    mname = monsters[ch-'A'].m_name;
-		msg("the %s's gaze has confused you", mname);
-	    }
-	}
+		dst = DISTANCE(y, x, hero.y, hero.x);
+		if ((rp != NULL && !(rp->r_flags & ISDARK)) || dst < LAMPDIST) {
+		    tp->t_flags |= ISFOUND;
+		    if (!save(VS_MAGIC)) {
+				if (on(player, ISHUH))
+				    lengthen(unconfuse, rnd(20) + HUHDURATION);
+				else
+				    fuse(unconfuse, 0, rnd(20) + HUHDURATION);
+				player.t_flags |= ISHUH;
+				msg("the medusa's gaze has confused you");
+		    }
+		}
     }
     /*
      * Let greedy ones guard gold
      */
-    if (on(*tp, ISGREED) && !on(*tp, ISRUN))
-    {
-	tp->t_flags |= ISRUN;
-	if (proom->r_goldval)
-	    tp->t_dest = &proom->r_gold;
-	else
-	    tp->t_dest = &hero;
+    if (on(*tp, ISGREED) && !on(*tp, ISRUN)) {
+		tp->t_flags = tp->t_flags | ISRUN;
+		if (proom->r_goldval)
+		    tp->t_dest = &proom->r_gold;
+		else
+		    tp->t_dest = &hero;
     }
     return tp;
-}
-
-/*
- * genocide:
- *	Wipe one monster out of existence (for now...)
- */
-genocide()
-{
-    register THING *mp;
-    register char c;
-    register int i;
-    register THING *nmp;
-
-    addmsg("which monster");
-    if (!terse)
-	addmsg(" do you wish to wipe out");
-    msg("? ");
-    while (!isalpha(c = readchar()))
-	if (c == ESCAPE)
-	    return;
-	else
-	{
-	    mpos = 0;
-	    msg("please specifiy a letter between 'A' and 'Z'");
-	}
-    mpos = 0;
-    if (islower(c))
-	c = toupper(c);
-    for (mp = mlist; mp; mp = nmp)
-    {
-	nmp = next(mp);
-	if (mp->t_type == c)
-	    remove(&mp->t_pos, mp, FALSE);
-    }
-    for (i = 0; i < 26; i++)
-	if (lvl_mons[i] == c)
-	{
-	    lvl_mons[i] = ' ';
-	    wand_mons[i] = ' ';
-	    break;
-	}
-    if (!terse)
-	addmsg("there will be ");
-    msg("no more %ss", monsters[c - 'A'].m_name);
 }
 
 /*
@@ -259,8 +211,47 @@ genocide()
  *	Give a pack to a monster if it deserves one
  */
 give_pack(tp)
-register THING *tp;
+THING *tp;
 {
-    if (rnd(100) < monsters[tp->t_type-'A'].m_carry)
-	attach(tp->t_pack, new_thing());
+    /*
+     * check if we can allocate a new item 
+     */
+    if (total < MAXITEMS && rnd(100) < monsters[tp->t_type-'A'].m_carry)
+		attach(tp->t_pack, new_thing());
 }
+
+/*
+ * pick_mons:
+ *	Choose a sort of monster for the enemy of a vorpally enchanted weapon
+ */
+
+pick_mons()
+{
+    register char *cp = lvl_mons + strlen(lvl_mons);
+
+    while (--cp >= lvl_mons && rnd(10))
+		;
+    if (cp < lvl_mons)
+		return 'M';
+    return *cp;
+}
+
+
+/*
+ * moat(x,y)
+ *    returns pointer to monster at coordinate
+ *	  if no monster there return NULL
+ */
+
+THING *
+moat(my,mx)
+	int my, mx;
+{
+	register THING *tp;
+
+	for (tp = mlist ; tp != NULL ; tp = next(tp))
+		if (tp->t_pos.x == mx  && tp->t_pos.y == my)
+			return(tp);
+	return(NULL);
+}
+

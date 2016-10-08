@@ -1,12 +1,16 @@
 /*
  * global variable initializaton
  *
- * @(#)init.c	4.19 (NMT from Berkeley 5.2) 8/25/83
+ * init.c	1.4 (A.I. Design) 12/14/84
  */
 
-#include <curses.h>
-#include <ctype.h>
 #include "rogue.h"
+#include "curses.h"
+
+THING *_things;
+int   *_t_alloc;
+
+char *newmem();
 
 /*
  * init_player:
@@ -15,9 +19,13 @@
 init_player()
 {
     register THING *obj;
-
-    pstats = max_stats;
+    bcopy(pstats,max_stats);
     food_left = HUNGERTIME;
+    /*
+     * initialize things
+     */
+	setmem(_things,MAXITEMS*sizeof(THING),0);
+	setmem(_t_alloc,MAXITEMS*sizeof(int),0);
     /*
      * Give the rogue his weaponry.  First a mace.
      */
@@ -80,7 +88,7 @@ init_player()
 }
 
 /*
- * Contains defintions and functions for dealing with things like
+ * Contains definitions and functions for dealing with things like
  * potions and scrolls
  */
 
@@ -111,30 +119,13 @@ static char *rainbow[] = {
     "vermilion",
     "violet",
     "white",
-    "yellow",
+    "yellow"
 };
 
 #define NCOLORS (sizeof rainbow / sizeof (char *))
 
-static char *sylls[] = {
-    "a", "ab", "ag", "aks", "ala", "an", "ankh", "app", "arg", "arze",
-    "ash", "ban", "bar", "bat", "bek", "bie", "bin", "bit", "bjor",
-    "blu", "bot", "bu", "byt", "comp", "con", "cos", "cre", "dalf",
-    "dan", "den", "do", "e", "eep", "el", "eng", "er", "ere", "erk",
-    "esh", "evs", "fa", "fid", "for", "fri", "fu", "gan", "gar",
-    "glen", "gop", "gre", "ha", "he", "hyd", "i", "ing", "ion", "ip",
-    "ish", "it", "ite", "iv", "jo", "kho", "kli", "klis", "la", "lech",
-    "man", "mar", "me", "mi", "mic", "mik", "mon", "mung", "mur",
-    "nej", "nelg", "nep", "ner", "nes", "nes", "nih", "nin", "o", "od",
-    "ood", "org", "orn", "ox", "oxy", "pay", "pet", "ple", "plu", "po",
-    "pot", "prok", "re", "rea", "rhov", "ri", "ro", "rog", "rok", "rol",
-    "sa", "san", "sat", "see", "sef", "seh", "shu", "ski", "sna",
-    "sne", "snik", "sno", "so", "sol", "sri", "sta", "sun", "ta",
-    "tab", "tem", "ther", "ti", "tox", "trol", "tue", "turs", "u",
-    "ulk", "um", "un", "uni", "ur", "val", "viv", "vly", "vom", "wah",
-    "wed", "werg", "wex", "whon", "wun", "xo", "y", "yot", "yu",
-    "zant", "zap", "zeb", "zim", "zok", "zon", "zum",
-};
+static char *c_set = "bcdfghjklmnpqrstvwxyz";
+static char *v_set = "aeiou";
 
 typedef struct {
     char	*st_name;
@@ -167,7 +158,7 @@ static STONE stones[] = {
     { "topaz",		 60},
     { "turquoise",	 70},
     { "taaffeite",	300},
-    { "zircon",	 	 80},
+    { "zircon",	 	 80}
 };
 
 #define NSTONES (sizeof stones / sizeof (STONE))
@@ -205,7 +196,7 @@ static char *wood[] = {
     "spruce",
     "teak",
     "walnut",
-    "zebrawood",
+    "zebrawood"
 };
 
 #define NWOOD (sizeof wood / sizeof (char *))
@@ -232,7 +223,7 @@ static char *metal[] = {
     "tin",
     "titanium",
     "tungsten",
-    "zinc",
+    "zinc"
 };
 
 #define NMETAL (sizeof metal / sizeof (char *))
@@ -245,11 +236,8 @@ init_things()
 {
     register struct magic_item *mp;
 
-    for (mp = &things[1]; mp < &things[NUMTHINGS]; mp++)
+    for (mp = &things[1]; mp <= &things[NUMTHINGS-1]; mp++)
 	mp->mi_prob += (mp-1)->mi_prob;
-#ifdef WIZARD
-    badcheck("things", things, NUMTHINGS);
-#endif
 }
 
 /*
@@ -267,59 +255,83 @@ init_colors()
     {
 	do
 	    j = rnd(NCOLORS);
-	until (!used[j]);
+	while (used[j]);
 	used[j] = TRUE;
 	p_colors[i] = rainbow[j];
 	p_know[i] = FALSE;
-	p_guess[i] = NULL;
+	p_guess[i] = (char *)&_guesses[iguess++];
 	if (i > 0)
 	    p_magic[i].mi_prob += p_magic[i-1].mi_prob;
     }
-#ifdef WIZARD
-    badcheck("potions", p_magic, MAXPOTIONS);
-#endif
 }
 
 /*
  * init_names:
  *	Generate the names of the various scrolls
  */
-#define MAXNAME	40	/* Max number of characters in a name */
 
 init_names()
 {
-    register int nsyl;
-    register char *cp, *sp;
-    register int i, nwords;
+     int nsyl;
+     register char *cp, *sp;
+     int i, nwords;
 
     for (i = 0; i < MAXSCROLLS; i++)
     {
 	cp = prbuf;
-	nwords = rnd(4) + 2;
+	nwords = rnd(terse?3:4) + 2;
 	while (nwords--)
 	{
-	    nsyl = rnd(3) + 1;
+	    nsyl = rnd(2) + 1;
 	    while (nsyl--)
 	    {
-		sp = sylls[rnd((sizeof sylls) / (sizeof (char *)))];
-		if (&cp[strlen(sp)] > &prbuf[MAXNAME])
-			break;
+		sp = getsyl();
+		if (&cp[strlen(sp)] > &prbuf[MAXNAME-1])
+		{
+		    nwords = 0;
+		    break;
+		}
 		while (*sp)
 		    *cp++ = *sp++;
 	    }
 	    *cp++ = ' ';
 	}
 	*--cp = '\0';
-	s_names[i] = (char *) malloc((unsigned) strlen(prbuf)+1);
+	/*
+	 * I'm tired of thinking about this one so just in case .....
+	 */
+	prbuf[MAXNAME] = 0;
 	s_know[i] = FALSE;
-	s_guess[i] = NULL;
-	strcpy(s_names[i], prbuf);
+	s_guess[i] = (char *)&_guesses[iguess++];
+	strcpy(&s_names[i], prbuf);
 	if (i > 0)
 	    s_magic[i].mi_prob += s_magic[i-1].mi_prob;
     }
-#ifdef WIZARD
-    badcheck("scrolls", s_magic, MAXSCROLLS);
-#endif
+}
+
+/*
+ * getsyl()
+ *   -- generate a random sylable
+ */
+getsyl()
+{
+    static char _tsyl[4];
+
+    _tsyl[3] = 0;
+    _tsyl[2] = rchr(c_set);
+    _tsyl[1] = rchr(v_set);
+    _tsyl[0] = rchr(c_set);
+    return (_tsyl);
+}
+
+/*
+ * rchr()
+ *    return random character in given string
+ */
+rchr(string)
+    char *string;
+{
+    return(string[rnd(strlen(string))]);
 }
 
 /*
@@ -334,21 +346,17 @@ init_stones()
     for (i = 0; i < NSTONES; i++)
 	used[i] = FALSE;
     for (i = 0; i < MAXRINGS; i++)
-    {
-	do
+    {	do
 	    j = rnd(NSTONES);
-	until (!used[j]);
+	while (used[j]);
 	used[j] = TRUE;
 	r_stones[i] = stones[j].st_name;
 	r_know[i] = FALSE;
-	r_guess[i] = NULL;
+	r_guess[i] = (char *)&_guesses[iguess++];
 	if (i > 0)
 	    r_magic[i].mi_prob += r_magic[i-1].mi_prob;
 	r_magic[i].mi_worth += stones[j].st_value;
     }
-#ifdef WIZARD
-    badcheck("rings", r_magic, MAXRINGS);
-#endif
 }
 
 /*
@@ -392,45 +400,51 @@ init_materials()
 	    }
 	ws_made[i] = str;
 	ws_know[i] = FALSE;
-	ws_guess[i] = NULL;
+	ws_guess[i] = (char *)&_guesses[iguess++];
 	if (i > 0)
 	    ws_magic[i].mi_prob += ws_magic[i-1].mi_prob;
     }
-#ifdef WIZARD
-    badcheck("sticks", ws_magic, MAXSTICKS);
-#endif
 }
-
-#ifdef WIZARD
-/*
- * badcheck:
- *	Check to see if a series of probabilities sums to 100
- */
-badcheck(name, magic, bound)
-char *name;
-register struct magic_item *magic;
-register int bound;
-{
-    register struct magic_item *end;
-
-    if (magic[bound - 1].mi_prob == 100)
-	return;
-    printf("\nBad percentages for %s:\n", name);
-    for (end = &magic[bound]; magic < end; magic++)
-	printf("%3d%% %s\n", magic->mi_prob, magic->mi_name);
-    printf("[hit RETURN to continue]");
-    fflush(stdout);
-    while (getchar() != '\n')
-	continue;
-}
-#endif
 
 /*
- * rnd_color:
- *	Pick a random color name and return it
+ * Declarations for allocated things
  */
-char *
-rnd_color()
+long *e_levels;		/* Pointer to array of experience level */
+char *tbuf;		/* Temp buffer used in fighting */
+char *msgbuf;		/* Message buffer for msg() */
+char *prbuf;		/* Printing buffer used everywhere */
+char *end_mem;		/* Pointer to end of memory */
+char *startmem;	    /* Pointer to the start of static memory */
+char *end_sb;		/* Pointer to the end of static base */
+char *ring_buf;		/* Buffer used by ring code */
+
+/*
+ *  Declarations for data space that must be saved and restored exaxtly
+ */
+byte *_level;
+byte *_flags;
+
+/*
+ * init_ds()
+ *   Allocate things data space
+ */
+init_ds(clrflag)
+	int clrflag;
 {
-    return (rainbow[rnd(NCOLORS)]);
+	register long *ep;
+
+    end_sb = _flags = newmem((MAXLINES-3)*MAXCOLS);
+    _level = newmem((MAXLINES-3)*MAXCOLS);
+    _things = (THING *)newmem(sizeof(THING) * MAXITEMS);
+    _t_alloc = (int *)newmem(MAXITEMS*sizeof(int));
+
+    startmem = tbuf = newmem(MAXSTR);
+    msgbuf = newmem(BUFSIZ);
+    prbuf = newmem(MAXSTR);
+    ring_buf = newmem(6);
+    e_levels = (long *)newmem(20 * sizeof (long));
+    for (ep = e_levels+1, *e_levels = 10L; ep < e_levels + 19; ep++)
+    	*ep = *(ep-1) << 1;
+    *ep = 0L; 
 }
+

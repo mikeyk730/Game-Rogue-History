@@ -1,12 +1,11 @@
 /*
  * Functions for dealing with problems brought about by weapons
  *
- * @(#)weapons.c	4.15 (NMT from Berkeley 5.2) 8/25/83
+ * weapons.c	1.4 (AI Design)	12/22/84
  */
 
-#include <curses.h>
-#include <ctype.h>
 #include "rogue.h"
+#include "curses.h"
 
 #define NONE 100
 
@@ -25,7 +24,7 @@ static struct init_weps {
     "1d1",	"1d3",	NONE,		ISMANY|ISMISL,	/* Dart */
     "1d1",	"1d1",	NONE,		0,		/* Crossbow */
     "1d2",	"2d5",	CROSSBOW,	ISMANY|ISMISL,	/* Crossbow bolt */
-    "2d3",	"1d6",	NONE,		ISMISL,		/* Spear */
+    "2d3",	"1d6",	NONE,		ISMISL		/* Spear */
 };
 
 /*
@@ -41,28 +40,33 @@ int ydelta, xdelta;
      * Get which thing we are hurling
      */
     if ((obj = get_item("throw", WEAPON)) == NULL)
-	return;
-    if (!dropcheck(obj) || is_current(obj))
-	return;
+		return;
+    if (!can_drop(obj) || is_current(obj))
+		return;
     /*
      * Get rid of the thing.  If it is a non-multiple item object, or
      * if it is the last thing, just drop it.  Otherwise, create a new
      * item with a count of one.
      */
-    if (obj->o_count < 2)
-    {
-	detach(pack, obj);
-	inpack--;
-    }
-    else
-    {
-	obj->o_count--;
-	if (obj->o_group == 0)
-	    inpack--;
-	nitem = new_item();
-	*nitem = *obj;
-	nitem->o_count = 1;
-	obj = nitem;
+    hack:
+    if (obj->o_count < 2) {
+		detach(pack, obj);
+		inpack--;
+    } else {
+    	/*
+    	 * here is a quick hack to check if we can get a new item
+    	 */
+		if ((nitem = new_item()) == NULL) {
+		    obj->o_count = 1;
+		    msg("something in your pack explodes!!!");
+		    goto hack;
+		}
+		obj->o_count--;
+		if (obj->o_group == 0)
+		    inpack--;
+		bcopy(*nitem,*obj);
+		nitem->o_count = 1;
+		obj = nitem;
     }
     do_motion(obj, ydelta, xdelta);
     /*
@@ -70,8 +74,8 @@ int ydelta, xdelta;
      * or if it misses (combat) the monster, put it on the floor
      */
     if (moat(obj->o_pos.y, obj->o_pos.x) == NULL
-	|| !hit_monster(unc(obj->o_pos), obj))
-	    fall(obj, TRUE);
+		|| !hit_monster(unc(obj->o_pos), obj))
+		    fall(obj, TRUE);
 }
 
 /*
@@ -80,42 +84,63 @@ int ydelta, xdelta;
  *	across the room
  */
 do_motion(obj, ydelta, xdelta)
-register THING *obj;
+THING *obj;
 register int ydelta, xdelta;
 {
+	register byte under = '@';
+
     /*
      * Come fly with us ...
      */
-    obj->o_pos = hero;
-    for (;;)
-    {
-	register int ch;
+    bcopy(obj->o_pos,hero);
+    for (;;) {
+		register int ch;
 
-	/*
-	 * Erase the old one
-	 */
-	if (!ce(obj->o_pos, hero) && cansee(unc(obj->o_pos)))
-	    mvaddch(obj->o_pos.y, obj->o_pos.x, chat(obj->o_pos.y, obj->o_pos.x));
-	/*
-	 * Get the new position
-	 */
-	obj->o_pos.y += ydelta;
-	obj->o_pos.x += xdelta;
-	if (step_ok(ch = winat(obj->o_pos.y, obj->o_pos.x)) && ch != DOOR)
-	{
-	    /*
-	     * It hasn't hit anything yet, so display it
-	     * If it alright.
-	     */
-	    if (cansee(unc(obj->o_pos)))
-	    {
-		mvaddch(obj->o_pos.y, obj->o_pos.x, obj->o_type);
-		refresh();
-	    }
-	    continue;
-	}
-	break;
+		/*
+		 * Erase the old one
+		 */
+		if (under != '@' && !ce(obj->o_pos, hero) && cansee(unc(obj->o_pos)))
+		    mvaddch(obj->o_pos.y, obj->o_pos.x, under);
+		/*
+		 * Get the new position
+		 */
+		obj->o_pos.y += ydelta;
+		obj->o_pos.x += xdelta;
+
+		if (step_ok(ch = winat(obj->o_pos.y, obj->o_pos.x)) && ch != DOOR) {
+		    /*
+		     * It hasn't hit anything yet, so display it
+		     * If it alright.
+		     */
+		    if (cansee(unc(obj->o_pos))) {
+				under = chat(obj->o_pos.y, obj->o_pos.x);
+				mvaddch(obj->o_pos.y, obj->o_pos.x, obj->o_type);
+				tick_pause();
+			} else
+				under = '@';
+		    continue;
+		}
+		break;
     }
+}
+
+char *
+short_name(obj)
+THING *obj;
+{
+	switch (obj->o_type) {
+		case WEAPON: return w_names[obj->o_which];
+		case ARMOR: return a_names[obj->o_which];
+		case FOOD: return "food";
+		case POTION:
+		case SCROLL:
+		case AMULET:
+		case STICK:
+		case RING:
+			return index(inv_name(obj, TRUE), ' ') + 1;
+		default:
+			return "bizzare thing";
+	}
 }
 
 /*
@@ -123,29 +148,37 @@ register int ydelta, xdelta;
  *	Drop an item someplace around here.
  */
 fall(obj, pr)
-register THING *obj;
-register bool pr;
+THING *obj;
+bool pr;
 {
     static coord fpos;
     register int index;
 
-    if (fallpos(&obj->o_pos, &fpos, TRUE))
+    switch (fallpos(obj, &fpos))
     {
-	index = INDEX(fpos.y, fpos.x);
-	_level[index] = obj->o_type;
-	obj->o_pos = fpos;
-	if (cansee(fpos.y, fpos.x))
-	{
-	    mvaddch(fpos.y, fpos.x, obj->o_type);
-	    if (_monst[index] != NULL)
-		_monst[index]->t_oldch = obj->o_type;
-	}
-	attach(lvl_obj, obj);
-	return;
+	case 1:
+	    index = INDEX(fpos.y, fpos.x);
+	    _level[index] = obj->o_type;
+	    bcopy(obj->o_pos,fpos);
+	    if (cansee(fpos.y, fpos.x))
+	    {
+		if ((flat(obj->o_pos.y, obj->o_pos.x) & F_PASS) ||
+		               (flat(obj->o_pos.y, obj->o_pos.x) & F_MAZE))
+		    standout();
+		mvaddch(fpos.y, fpos.x, obj->o_type);
+		standend();
+		if (moat(fpos.y,fpos.x) != NULL)
+		    moat(fpos.y,fpos.x)->t_oldch = obj->o_type;
+	    }
+	    attach(lvl_obj, obj);
+	    return;
+	case 2:
+	    pr = 0;
     }
-    discard(obj);
     if (pr)
-	msg("the %s vanishes as it hits the ground", w_names[obj->o_which]);
+		msg("the %s vanishes%s.", short_name(obj),
+								  noterse(" as it hits the ground"));
+    discard(obj);
 }
 
 /*
@@ -154,7 +187,7 @@ register bool pr;
  */
 init_weapon(weap, type)
 register THING *weap;
-char type;
+byte type;
 {
     register struct init_weps *iwp;
 
@@ -181,10 +214,14 @@ register int y, x;
 THING *obj;
 {
     static coord mp;
+	register THING *mo;
 
-    mp.y = y;
-    mp.x = x;
-    return fight(&mp, moat(y, x)->t_type, obj, TRUE);
+	if (mo = moat(y, x)) {
+	    mp.y = y;
+	    mp.x = x;
+	    return fight(&mp, mo->t_type, obj, TRUE);
+	}
+	return FALSE;
 }
 
 /*
@@ -214,7 +251,7 @@ wield()
     register char *sp;
 
     oweapon = cur_weapon;
-    if (!dropcheck(cur_weapon))
+    if (!can_drop(cur_weapon))
     {
 	cur_weapon = oweapon;
 	return;
@@ -237,38 +274,55 @@ bad:
 
     sp = inv_name(obj, TRUE);
     cur_weapon = obj;
-    if (!terse)
-	addmsg("you are now ");
-    msg("wielding %s (%c)", sp, pack_char(obj));
+    ifterse2("now wielding %s (%c)","you are now wielding %s (%c)", sp, pack_char(obj));
 }
 
 /*
  * fallpos:
- *	Pick a random position around the give (y, x) coordinates
+ *	Pick a random position around the given (y, x) coordinates
  */
-fallpos(pos, newpos, pass)
-register coord *pos, *newpos;
-register bool pass;
+fallpos(obj, newpos)
+register coord *newpos;
+THING *obj;
 {
-    register int y, x, cnt, ch;
+    register int y, x, cnt = 0, ch;
+    THING *onfloor;
 
-    cnt = 0;
-    for (y = pos->y - 1; y <= pos->y + 1; y++)
-	for (x = pos->x - 1; x <= pos->x + 1; x++)
-	{
-	    /*
-	     * check to make certain the spot is empty, if it is,
-	     * put the object there, set it in the level list
-	     * and re-draw the room if he can see it
-	     */
-	    if (y == hero.y && x == hero.x)
-		continue;
-	    if (((ch = chat(y, x)) == FLOOR || (pass && ch == PASSAGE))
-					&& rnd(++cnt) == 0)
-	    {
-		newpos->y = y;
-		newpos->x = x;
-	    }
-	}
-    return (cnt != 0);
+    for (y = obj->o_pos.y - 1; y <= obj->o_pos.y + 1; y++)
+		for (x = obj->o_pos.x - 1; x <= obj->o_pos.x + 1; x++) {
+		    /*
+		     * check to make certain the spot is empty, if it is,
+		     * put the object there, set it in the level list
+		     * and re-draw the room if he can see it
+		     */
+		    if ((y == hero.y && x == hero.x) || offmap(y,x))
+				continue;
+		    if ((ch = chat(y, x)) == FLOOR || ch == PASSAGE) {
+				if (rnd(++cnt) == 0) {
+				    newpos->y = y;
+				    newpos->x = x;
+				}
+				continue;
+		    }
+		    if (step_ok(ch)
+				&& (onfloor = find_obj(y, x))
+				&& onfloor->o_type == obj->o_type
+				&& onfloor->o_group
+				&& onfloor->o_group == obj->o_group)
+		    {
+				onfloor->o_count += obj->o_count;
+				return 2;
+		    }
+		}
+		return(cnt != 0);
+}
+
+tick_pause()
+{
+	register int otick;
+	extern int tick;
+
+	otick = tick;
+	while (otick == tick)
+		;
 }

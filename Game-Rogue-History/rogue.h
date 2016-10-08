@@ -1,8 +1,65 @@
 /*
  * Rogue definitions and variable declarations
  *
- * @(#)rogue.h	5.11 (Berkeley) 8/25/83
+ * rogue.h	1.4 (AI Design) 12/14/84
  */
+
+
+/*
+ *  Options set for PC rogue
+ */
+
+/*
+ * copy protection
+ */
+#define PROTECTED
+#define CSUM	-1632
+#ifdef PROTECTED
+#define P_DAMAGE 6
+#else
+#define P_DAMAGE 1
+#endif PROTECTED
+
+/*
+ * if DEBUG or WIZARD is changed
+ * might as well recompile everything
+ */
+#define HELP
+#undef DEMO
+#define DEMOTIME 10
+/*
+ * DEMO
+ *      recompile:
+ *          save.c
+ *	    rip.c
+ *          io.c
+ *          main.c
+ */
+#define REV 1
+#define VER 48
+
+/*
+ * If CODECSUM is changed recompile extern.c
+ */
+#define SCOREFILE "rogue.scr"
+#define SAVEFILE  "rogue.sav"
+#define ENVFILE	  "rogue.opt"
+#define IBM
+#define MACROSZ 41
+
+#define ifterse0 ifterse
+#define ifterse1 ifterse
+#define ifterse2 ifterse
+#define ifterse3 ifterse
+#define ifterse4 ifterse
+
+/*
+ *  MANX C compiler funnies
+ */
+#define	bcopy(a,b)	movmem(&(b),&(a),sizeof(a))
+#define stpchr index
+typedef unsigned char byte;
+typedef unsigned char bool;
 
 /*
  * Maximum number of different things
@@ -15,34 +72,27 @@
 #define AMULETLEVEL	26
 #define	NUMTHINGS	7	/* number of types of things */
 #define MAXPASS		13	/* upper limit on number of passages */
-
-/*
- * return values for get functions
- */
-#define	NORM	0	/* normal exit */
-#define	QUIT	1	/* quit option setting */
-#define	MINUS	2	/* back up one option */
-
-/*
- * inventory types
- */
-
-#define	INV_OVER	0
-#define	INV_SLOW	1
-#define	INV_CLEAR	2
+#define MAXNAME		20  /* Maximum Length of a scroll */
+#define MAXITEMS	83  /* Maximum number of randomly generated things */
 
 /*
  * All the fun defines
  */
-#define shint		char		/* short integer (for very small #s) */
+#define shint		int		/* short integer (for very small #s) */
 #define when		break;case
 #define otherwise	break;default
 #define until(expr)	while(!(expr))
 #define next(ptr)	(*ptr).l_next
 #define prev(ptr)	(*ptr).l_prev
+#ifdef UNIX
 #define winat(y,x)	(moat(y,x) != NULL ? moat(y,x)->t_disguise : chat(y,x))
-#define DISTANCE(y1, x1, y2, x2) ((x2 - x1)*(x2 - x1) + (y2 - y1)*(y2 - y1))
+#define DISTANCE(y1,x1,y2,x2) (((x2)-(x1))*((x2)-(x1))+((y2)-(y1))*((y2)-(y1)))
+#endif
+#ifdef UNIX
 #define ce(a,b)		((a).x == (b).x && (a).y == (b).y)
+#else
+#define ce(a,b)		_ce(&(a),&(b))
+#endif
 #define hero		player.t_pos
 #define pstats		player.t_stats
 #define pack		player.t_pack
@@ -58,11 +108,11 @@
 #define ISRING(h,r)	(cur_ring[h] != NULL && cur_ring[h]->o_which == r)
 #define ISWEARING(r)	(ISRING(LEFT, r) || ISRING(RIGHT, r))
 #define ISMULT(type) 	(type==POTION || type==SCROLL || type==FOOD || type==GOLD)
-#define INDEX(y,x)	(((x) << 5) + (y))
-#define chat(y,x)	(_level[((x) << 5) + (y)])
-#define flat(y,x)	(_flags[((x) << 5) + (y)])
-#define moat(y,x)	(_monst[((x) << 5) + (y)])
+#define chat(y,x)	(_level[INDEX(y,x)])
+#define flat(y,x)	(_flags[INDEX(y,x)])
 #define unc(cp)		(cp).y, (cp).x
+#define isfloor(c)	((c) == FLOOR || (c) == PASSAGE)
+#define isgone(rp)	(((rp)->r_flags&ISGONE) && ((rp)->r_flags&ISMAZE) == 0)
 #ifdef WIZARD
 #define debug		if (wizard) msg
 #endif
@@ -70,37 +120,42 @@
 /*
  * Things that appear on the screens
  */
-#define PASSAGE		'#'
-#define DOOR		'+'
-#define FLOOR		'.'
-#define PLAYER		'@'
-#define TRAP		'^'
-#define STAIRS		'%'
-#define GOLD		'*'
-#define POTION		'!'
-#define SCROLL		'?'
+#define PASSAGE		(0xb1)
+#define DOOR		(0xce)
+#define FLOOR		(0xfa)
+#define PLAYER		(0x01)
+#define TRAP		(0x04)
+#define STAIRS		(0xf0)
+#define GOLD		(0x0f)
+#define POTION		(0xad)
+#define SCROLL		(0x0d)
 #define MAGIC		'$'
-#define FOOD		':'
-#define WEAPON		')'
-#define ARMOR		']'
-#define AMULET		','
-#define RING		'='
-#define STICK		'/'
+#define	BMAGIC		'+'
+#define FOOD		(0x05)
+#define STICK		(0xe7)
+#define ARMOR		(0x08)
+#define AMULET		(0x0c)
+#define RING		(0x09)
+#define WEAPON		(0x18)
 #define CALLABLE	-1
+
+#define VWALL	(0xba)
+#define HWALL	(0xcd)
+#define ULWALL	(0xc9)
+#define URWALL	(0xbb)
+#define LLWALL	(0xc8)
+#define LRWALL	(0xbc)
 
 /*
  * Various constants
  */
-#define PASSWD		"mTE6myvIHoD4k"
 #define BEARTIME	spread(3)
 #define SLEEPTIME	spread(5)
 #define HEALTIME	spread(30)
 #define HOLDTIME	spread(2)
 #define WANDERTIME	spread(70)
-#define BEFORE		spread(1)
-#define AFTER		spread(2)
 #define HUHDURATION	spread(20)
-#define SEEDURATION	spread(850)
+#define SEEDURATION	spread(300)
 #define HUNGERTIME	spread(1300)
 #define MORETIME	150
 #define STOMACHSIZE	2000
@@ -116,6 +171,7 @@
  */
 #define VS_POISON	00
 #define VS_PARALYZATION	00
+#define VS_LUCK		01
 #define VS_DEATH	00
 #define VS_BREATH	02
 #define VS_MAGIC	03
@@ -124,46 +180,45 @@
  * Various flag bits
  */
 /* flags for rooms */
-#define ISDARK	0000001		/* room is dark */
-#define ISGONE	0000002		/* room is gone (a corridor) */
-#define ISMAZE	0000004		/* room is gone (a corridor) */
+#define ISDARK	 0x0001		/* room is dark */
+#define ISGONE	 0x0002		/* room is gone (a corridor) */
+#define	ISMAZE	 0x0004		/* room is a maze */
 
 /* flags for objects */
-#define ISCURSED 000001		/* object is cursed */
-#define ISKNOW	0000002		/* player knows details about the object */
-#define ISMISL	0000004		/* object is a missile type */
-#define ISMANY	0000010		/* object comes in groups */
+#define ISCURSED 0x0001		/* object is cursed */
+#define ISKNOW	 0x0002		/* player knows details about the object */
+#define DIDFLASH 0x0004		/* has the vorpal weapon flashed */
+#define ISEGO	 0x0008		/* weapon has control of player */
+#define ISMISL	 0x0010		/* object is a missile type */
+#define ISMANY	 0x0020		/* object comes in groups */
+#define ISREVEAL 0x0040		/* Do you know who the enemy of the object is */
 
 /* flags for creatures */
-#define CANHUH	0000001		/* creature can confuse */
-#define CANSEE	0000002		/* creature can see invisible creatures */
-#define ISBLIND	0000004		/* creature is blind */
-#define ISCANC	0000010		/* creature has special qualities cancelled */
-#define ISFOUND	0000020		/* creature has been seen (used for objects) */
-#define ISGREED	0000040		/* creature runs to protect gold */
-#define ISHASTE	0000100		/* creature has been hastened */
-#define ISHELD	0000400		/* creature has been held */
-#define ISHUH	0001000		/* creature is confused */
-#define ISINVIS	0002000		/* creature is invisible */
-#define ISMEAN	0004000		/* creature can wake when player enters room */
-/* #define ISTRIP	0004000		/* hero is on acid trip */
-#define ISTrip	0004000		/* hero is on acid trip */
-#define ISREGEN	0010000		/* creature can regenerate */
-#define ISRUN	0020000		/* creature is running at the player */
-#define SEEMONST 040000		/* hero can detect unseen monsters */
-#define ISSLOW	0100000		/* creature has been slowed */
+#define ISBLIND	 0x0001		/* creature is blind */
+#define SEEMONST 0x0002		/* hero can detect unseen monsters */
+#define ISRUN	 0x0004		/* creature is running at the player */
+#define ISFOUND	 0x0008		/* creature has been seen (used for objects) */
+#define ISINVIS	 0x0010		/* creature is invisible */
+#define ISMEAN	 0x0020		/* creature can wake when player enters room */
+#define ISGREED	 0x0040		/* creature runs to protect gold */
+#define ISHELD	 0x0080		/* creature has been held */
+#define ISHUH	 0x0100		/* creature is confused */
+#define ISREGEN	 0x0200		/* creature can regenerate */
+#define CANHUH	 0x0400		/* creature can confuse */
+#define CANSEE	 0x0800		/* creature can see invisible creatures */
+#define ISCANC	 0x1000		/* creature has special qualities cancelled */
+#define ISSLOW	 0x2000		/* creature has been slowed */
+#define ISHASTE	 0x4000		/* creature has been hastened */
+#define ISFLY	 0x8000		/* creature is of the flying type */
 
 /*
  * Flags for level map
  */
-#define F_PASS		0x80		/* is a passageway */
-#define F_SEEN		0x40		/* have seen this spot before */
-#define F_DROPPED	0x20		/* object was dropped here */
-#define F_LOCKED	0x20		/* door is locked */
-#define F_REAL		0x10		/* what you see is what you get */
-#define F_MEXIT		0x10		/* "passage" is exit from maze */
-#define F_PNUM		0x0f		/* passage number mask */
-#define F_TMASK		0x07		/* trap number mask */
+#define F_PASS		0x040		/* is a passageway */
+#define F_MAZE		0x020		/* have seen this corridor before */
+#define F_REAL		0x010		/* what you see is what you get */
+#define F_PNUM		0x00f		/* passage number mask */
+#define F_TMASK		0x007		/* trap number mask */
 
 /*
  * Trap types
@@ -180,7 +235,7 @@
  * Potion types
  */
 #define P_CONFUSE	0
-#define P_LSD		1
+#define P_PARALYZE	1
 #define P_POISON	2
 #define P_STRENGTH	3
 #define P_SEEINVIS	4
@@ -212,7 +267,7 @@
 #define S_REMOVE	11
 #define S_AGGR		12
 #define S_NOP		13
-#define S_GENOCIDE	14
+#define S_VORPAL	14
 #define MAXSCROLLS	15
 
 /*
@@ -268,7 +323,7 @@
  */
 
 #define WS_LIGHT	0
-#define WS_INVIS	1
+#define WS_HIT		1
 #define WS_ELECT	2
 #define WS_FIRE		3
 #define WS_COLD		4
@@ -316,6 +371,10 @@ struct magic_item {
     short mi_worth;
 };
 
+struct array {
+	char storage[MAXNAME+1];
+} ;
+
 /*
  * Room structure
  */
@@ -337,9 +396,9 @@ struct stats {
     long s_exp;				/* Experience */
     shint s_lvl;			/* Level of mastery */
     shint s_arm;			/* Armor class */
-    short s_hpt;			/* Hit points */
+    shint s_hpt;			/* Hit points */
     char *s_dmg;			/* String describing damage done */
-    short s_maxhp;			/* Max hit points */
+    shint s_maxhp;			/* Max hit points */
 };
 
 /*
@@ -349,10 +408,10 @@ union thing {
     struct {
 	union thing *_l_next, *_l_prev;	/* Next pointer in link */
 	coord _t_pos;			/* Position */
-	bool _t_turn;			/* If slowed, is it a turn to move */
+	char _t_turn;			/* If slowed, is it a turn to move */
 	char _t_type;			/* What it is */
-	char _t_disguise;		/* What mimic looks like */
-	char _t_oldch;			/* Character that was where it was */
+	byte _t_disguise;		/* What mimic looks like */
+	byte _t_oldch;			/* Character that was where it was */
 	coord *_t_dest;			/* Where it is running to */
 	short _t_flags;			/* State word */
 	struct stats _t_stats;		/* Physical description */
@@ -373,6 +432,7 @@ union thing {
 	shint _o_dplus;			/* Plusses to damage */
 	short _o_ac;			/* Armor class */
 	short _o_flags;			/* Information about objects */
+	char _o_enemy;			/* If it is enchanted, who it hates */
 	shint _o_group;			/* Group number for this object */
     } _o;
 };
@@ -406,9 +466,10 @@ typedef union thing THING;
 #define o_goldval	o_ac
 #define o_flags		_o._o_flags
 #define o_group		_o._o_group
+#define o_enemy		_o._o_enemy
 
 /*
- * Array containing information on all the various types of mosnters
+ * Array containing information on all the various types of monsters
  */
 struct monster {
     char *m_name;			/* What to call the monster */
@@ -417,16 +478,24 @@ struct monster {
     struct stats m_stats;		/* Initial stats */
 };
 
+#define TOPSCORES	10
+struct sc_ent {
+	char sc_name[38];
+	int sc_rank;
+	int sc_gold;
+	int sc_fate;
+	int sc_level;
+};
+
 /*
  * External variables
  */
 
-extern THING	*_monst[], *cur_armor, *cur_ring[], *cur_weapon,
-		*del_obj, *lvl_obj, *mlist, player;
+extern THING *cur_armor, *cur_ring[2], *cur_weapon,
+		*lvl_obj, *mlist, player;
 
-extern coord	delta, oldpos, stairs;
+extern coord	delta, oldpos;
 
-extern struct h_list	helpstr[];
 
 extern struct room	*oldrp, passages[], rooms[];
 
@@ -441,11 +510,12 @@ extern struct magic_item	p_magic[], r_magic[], s_magic[],
  * Function types
  */
 
-coord	*find_dest(), *rndmove();
+coord	*find_dest();
 
 THING	*find_mons(), *find_obj(), *get_item(), *new_item(),
 	*new_thing(), *wake_monster();
-
 struct room	*roomin();
 
 #include "extern.h"
+#include "swint.h"
+

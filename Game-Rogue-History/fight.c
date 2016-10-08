@@ -1,18 +1,11 @@
 /*
  * All the fighting gets done here
  *
- * @(#)fight.c	4.38 (NMT from Berkeley 5.2) 8/25/83
+ * @(#)fight.c		1.43 (AI Design)		1/19/85
  */
 
-#include <curses.h>
-#include <unctrl.h>
-#include <ctype.h>
 #include "rogue.h"
-
-long e_levels[] = {
-    10L,20L,40L,80L,160L,320L,640L,1280L,2560L,5120L,10240L,20480L,
-    40920L, 81920L, 163840L, 327680L, 655360L, 1310720L, 2621440L, 0L
-};
+#include "curses.h"
 
 /*
  * fight:
@@ -25,81 +18,69 @@ register THING *weap;
 bool thrown;
 {
     register THING *tp;
-    register bool did_hit = TRUE;
-    register char *mname, ch;
+    register char *mname;
 
     /*
      * Find the monster we want to fight
      */
-#ifdef WIZARD
-    debug("Fight()");
-    if ((tp = moat(mp->y, mp->x)) == NULL)
-	debug("Fight what @ %d,%d", mp->y, mp->x);
-#else
-    tp = moat(mp->y, mp->x);
-#endif
+    if ((tp = moat(mp->y, mp->x)) == 0)
+    	return FALSE;
     /*
      * Since we are fighting, things are not quiet so no healing takes
-     * place.
+     * place.  Cancel any command counts so player can recover.
      */
     count = quiet = 0;
-    runto(mp);
+    start_run(mp);
     /*
      * Let him know it was really a mimic (if it was one).
      */
-    ch = '\0';
-    if (tp->t_type == 'M' && tp->t_disguise != 'M' && !on(player, ISBLIND))
-    {
-	tp->t_disguise = 'M';
-	if (on(player, ISTrip)) {
-	    ch = rnd(26) + 'A';
-	    mname = monsters[ch - 'A'].m_name;
-	    mvaddch(tp->t_pos.y, tp->t_pos.x, ch);
-	}
-	else
-	    mname = monsters['M'-'A'].m_name;
-	if (on(player, ISTrip))
-	    msg("wait!  That's a monster!");
-	else
-	    msg("wait!  That's a mimic!");
-	if (!thrown)
-	    return FALSE;
+    if (tp->t_type == 'X' && tp->t_disguise != 'X' && !on(player, ISBLIND)) {
+		mn = tp->t_disguise = 'X';
+		if (thrown)
+		    return FALSE;
+		msg("wait! That's a Xeroc!");
     }
-    if (on(player, ISBLIND) ||
-       (on(*tp, ISINVIS) && !on(player, CANSEE|SEEMONST)))
-	    mname = (terse ? "it" : "something");
-    else if (on(player, ISTrip))
-	mname = monsters[toascii(mvinch(tp->t_pos.y, tp->t_pos.x))-'A'].m_name;
-    else
-	mname = monsters[mn-'A'].m_name;
-    did_hit = FALSE;
-    if (roll_em(&player, tp, weap, thrown))
-    {
-	did_hit = FALSE;
-	if (thrown)
-	    thunk(weap, mname);
-	else
-	    hit(NULL, mname);
-	if (on(player, CANHUH))
-	{
-	    did_hit = TRUE;
-	    tp->t_flags |= ISHUH;
-	    player.t_flags &= ~CANHUH;
-	    msg("your hands stop glowing %s",
-		on(player, ISTrip) ? rnd_color() : "red");
-	}
-	if (tp->t_stats.s_hpt <= 0)
-	    killed(tp, TRUE);
-	else if (did_hit && !on(player, ISBLIND))
-	    msg("the %s appears confused", mname);
-	did_hit = TRUE;
+    mname = monsters[mn-'A'].m_name;
+    if (on(player, ISBLIND))
+		mname = it;
+    if (roll_em(&player, tp, weap, thrown)||(weap && weap->o_type == POTION)) {
+		bool did_huh = FALSE;
+
+		if (thrown)
+		    thunk(weap, mname, "hits", "hit");
+		else
+		    hit(NULL, mname);
+		if (weap->o_type == POTION) {
+			th_effect(weap, tp);
+			if (!thrown) {
+				if (weap->o_count > 1)
+					weap->o_count--;
+				else {
+					detach(pack, weap);
+					discard(weap);
+				}
+				cur_weapon = NULL;
+			}
+		}
+		if (on(player, CANHUH)) {
+		    did_huh = TRUE;
+		    tp->t_flags |= ISHUH;
+		    player.t_flags &= ~CANHUH;
+		    msg("your hands stop glowing red");
+		}
+		if (tp->t_stats.s_hpt <= 0)
+		    killed(tp, TRUE);
+		else if (did_huh && !on(player, ISBLIND))
+		    msg("the %s appears confused", mname);
+		return TRUE;
     }
+    if (thrown)
+		thunk(weap, mname, "misses", "missed");
     else
-	if (thrown)
-	    bounce(weap, mname);
-	else
-	    miss(NULL, mname);
-    return did_hit;
+		miss(NULL, mname);
+	if (tp->t_type == 'S' && rnd(100) > 25)
+		slime_split(tp);
+    return FALSE;
 }
 
 /*
@@ -107,9 +88,9 @@ bool thrown;
  *	The monster attacks the player
  */
 attack(mp)
-register THING *mp;
+THING *mp;
 {
-    register char *mname, ch;
+    register char *mname;
 
     /*
      * Since this is an attack, stop running and any healing that was
@@ -117,33 +98,19 @@ register THING *mp;
      */
     running = FALSE;
     count = quiet = 0;
-    if (mp->t_type == 'M' && mp->t_disguise != 'M' && !on(player, ISBLIND))
-    {
-	mp->t_disguise = 'M';
-	if (on(player, ISTrip))
-	    mvaddch(mp->t_pos.y, mp->t_pos.x, rnd(26) + 'A');
-    }
-    if (on(player, ISBLIND) ||
-       (on(*mp, ISINVIS) && !on(player, CANSEE|SEEMONST)))
-	    mname = (terse ? "it" : "something");
-    else if (on(player, ISTrip)) {
-	ch = toascii(mvinch(mp->t_pos.y, mp->t_pos.x));
-	if (!isupper(ch))
-	    addch(ch = rnd(26) + 'A');
-	mname = monsters[ch-'A'].m_name;
-    }
-    else
-	mname = monsters[mp->t_type-'A'].m_name;
-    if (roll_em(mp, &player, NULL, FALSE))
-    {
-	if (mp->t_type != 'E')
-	    hit(mname, NULL);
-	if (pstats.s_hpt <= 0)
-	    death(mp->t_type);	/* Bye bye life ... */
-	if (!on(*mp, ISCANC))
-	    switch (mp->t_type)
+    if (mp->t_type == 'X' && !on(player, ISBLIND))
+		mp->t_disguise = 'X';
+    mname = monsters[mp->t_type-'A'].m_name;
+    if (on(player, ISBLIND))
+		mname = it;
+    if (roll_em(mp, &player, NULL, FALSE)) {
+		hit(mname, NULL);
+		if (pstats.s_hpt <= 0)
+		    death(mp->t_type);	/* Bye bye life ... */
+		if (!on(*mp, ISCANC))
+		    switch (mp->t_type)
 	    {
-		when 'R':
+		when 'A':
 		    /*
 		     * If a rust monster hits, you lose armor, unless
 		     * that armor is leather or there is a magic ring
@@ -151,48 +118,32 @@ register THING *mp;
 		    if (cur_armor != NULL && cur_armor->o_ac < 9
 			&& cur_armor->o_which != LEATHER)
 			    if (ISWEARING(R_SUSTARM))
-				msg("The rust vanishes instantly");
+				msg("the rust vanishes instantly");
 			    else
 			    {
+				msg("your armor weakens, oh my!");
 				cur_armor->o_ac++;
-				if (!terse)
-				    msg("your armor appears to be weaker now. Oh my!");
-				else
-				    msg("your armor weakens");
 			    }
-		when 'E':
+		when 'I':
 		    /*
-		     * The gaze of the floating eye hypnotizes you
+		     * When an Ice Monster hits you, you get unfrozen faster
 		     */
-		    if (on(player, ISBLIND))
-			break;
-		    player.t_flags &= ~ISRUN;
-		    if (!no_command)
-		    {
-			addmsg("you are transfixed");
-			if (!terse)
-			    addmsg(" by the gaze of the %s", mname);
-			endmsg();
-		    }
-		    no_command += rnd(2) + 2;
-		when 'A':
+		    if (no_command > 1)
+		    	no_command--;
+		    break;
+		when 'R':
 		    /*
-		     * Ants have poisonous bites
+		     * Rattlesnakes have poisonous bites
 		     */
 		    if (!save(VS_POISON))
 			if (!ISWEARING(R_SUSTSTR))
 			{
 			    chg_str(-1);
-			    if (!terse)
-				msg("you feel a sting in your arm and now feel weaker");
-			    else
-				msg("a sting has weakened you");
+			    msg("you feel a bite in your leg%s",
+			    	noterse(" and now feel weaker"));
 			}
 			else
-			    if (!terse)
-				msg("a sting momentarily weakens you");
-			    else
-				msg("sting has no effect");
+			    msg("a bite momentarily weakens you");
 		when 'W':
 		case 'V':
 		    /*
@@ -231,7 +182,7 @@ register THING *mp;
 		     * Violet fungi stops the poor guy from moving
 		     */
 		    player.t_flags |= ISHELD;
-		    sprintf(monsters['F'-'A'].m_stats.s_dmg,"%dd1",++fung_hit);
+		    sprintf(mp->t_stats.s_dmg,"%dd1",++fung_hit);
 		when 'L':
 		{
 		    /*
@@ -253,6 +204,7 @@ register THING *mp;
 		{
 		    register THING *obj, *steal;
 		    register int nobj;
+		    char *she_stole = "she stole %s!";
 
 		    /*
 		     * Nymph's steal a magic item, look through the pack
@@ -266,7 +218,7 @@ register THING *mp;
 				steal = obj;
 		    if (steal != NULL)
 		    {
-			remove(&mp->t_pos, moat(mp->t_pos.y, mp->t_pos.x), FALSE);
+			remove(&mp->t_pos, mp, FALSE);
 			inpack--;
 			if (steal->o_count > 1 && steal->o_group == 0)
 			{
@@ -274,14 +226,14 @@ register THING *mp;
 
 			    oc = steal->o_count--;
 			    steal->o_count = 1;
-			    msg("she stole %s!", inv_name(steal, TRUE));
+			    msg(she_stole, inv_name(steal, TRUE));
 			    steal->o_count = oc;
 			}
 			else
 			{
 			    detach(pack, steal);
 			    discard(steal);
-			    msg("she stole %s!", inv_name(steal, TRUE));
+			    msg(she_stole, inv_name(steal, TRUE));
 			}
 		    }
 		}
@@ -289,7 +241,7 @@ register THING *mp;
 		    break;
 	    }
     }
-    else if (mp->t_type != 'E')
+    else if (mp->t_type != 'I')
     {
 	if (mp->t_type == 'F')
 	{
@@ -299,8 +251,7 @@ register THING *mp;
 	}
 	miss(mname, NULL);
     }
-    if (fight_flush)
-	flush_type();
+    flush_type();
     count = 0;
     status();
 }
@@ -338,7 +289,7 @@ check_level()
 	max_hp += add;
 	if ((pstats.s_hpt += add) > max_hp)
 	    pstats.s_hpt = max_hp;
-	msg("welcome to level %d", i);
+	    msg("and achieve the rank of \"%s\"", he_man[i-1]);
     }
 }
 
@@ -351,14 +302,13 @@ THING *thatt, *thdef, *weap;
 bool hurl;
 {
     register struct stats *att, *def;
-    register char *cp;
-    register int ndice, nsides, def_arm;
+    char *cp;
+    int ndice, nsides, def_arm;
     register bool did_hit = FALSE;
     register int hplus;
     register int dplus;
     register int damage;
-    char *strchr();
-
+    char *stpchr();
     att = &thatt->t_stats;
     def = &thdef->t_stats;
     if (weap == NULL)
@@ -369,31 +319,45 @@ bool hurl;
     }
     else
     {
-	hplus = (weap == NULL ? 0 : weap->o_hplus);
-	dplus = (weap == NULL ? 0 : weap->o_dplus);
+	hplus = weap->o_hplus;
+	dplus = weap->o_dplus;
+	/*
+	 * Check for vorpally enchanted weapon
+	 */
+	if (thdef->t_type == weap->o_enemy)
+	{
+	    hplus += 4;
+	    dplus += 4;
+	}
 	if (weap == cur_weapon)
 	{
 	    if (ISRING(LEFT, R_ADDDAM))
-		dplus += cur_ring[LEFT]->o_ac;
+			dplus += cur_ring[LEFT]->o_ac;
 	    else if (ISRING(LEFT, R_ADDHIT))
-		hplus += cur_ring[LEFT]->o_ac;
+			hplus += cur_ring[LEFT]->o_ac;
 	    if (ISRING(RIGHT, R_ADDDAM))
-		dplus += cur_ring[RIGHT]->o_ac;
+			dplus += cur_ring[RIGHT]->o_ac;
 	    else if (ISRING(RIGHT, R_ADDHIT))
-		hplus += cur_ring[RIGHT]->o_ac;
+			hplus += cur_ring[RIGHT]->o_ac;
 	}
-	if (hurl)
-	    if ((weap->o_flags&ISMISL) && cur_weapon != NULL &&
+	cp = weap->o_damage;
+	if (hurl && (weap->o_flags&ISMISL) && cur_weapon != NULL &&
 	      cur_weapon->o_which == weap->o_launch)
-	    {
-		cp = weap->o_hurldmg;
-		hplus += cur_weapon->o_hplus;
-		dplus += cur_weapon->o_dplus;
-	    }
-	    else
-		cp = weap->o_hurldmg;
-	else
-	    cp = weap->o_damage;
+	{
+	    cp = weap->o_hurldmg;
+	    hplus += cur_weapon->o_hplus;
+	    dplus += cur_weapon->o_dplus;
+	}
+	/*
+	 * Drain a staff of striking
+	 */
+	if (weap->o_type == STICK && weap->o_which == WS_HIT
+		&& --weap->o_charges < 0)
+	{
+	    cp = weap->o_damage = "0d0";
+	    weap->o_hplus = weap->o_dplus = 0;
+	    weap->o_charges = 0;
+	}
     }
     /*
      * If the creature being attacked is not running (alseep or held)
@@ -414,7 +378,7 @@ bool hurl;
     for (;;)
     {
 	ndice = atoi(cp);
-	if ((cp = strchr(cp, 'd')) == NULL)
+	if ((cp = stpchr(cp, 'd')) == NULL)
 	    break;
 	nsides = atoi(++cp);
 	if (swing(att->s_lvl, def_arm, hplus + str_plus(att->s_str)))
@@ -422,15 +386,24 @@ bool hurl;
 	    register int proll;
 
 	    proll = roll(ndice, nsides);
-#ifdef WIZARD
-	    if (ndice + nsides > 0 && proll < 1)
-		debug("Damage for %dd%d came out %d, dplus = %d, add_dam = %d, def_arm = %d", ndice, nsides, proll, dplus, add_dam(att->s_str), def_arm);
-#endif
 	    damage = dplus + proll + add_dam(att->s_str);
+	    /*
+	     * special goodies for the commercial version of rogue
+	     */
+            if (thdef == &player && max_level == 1)
+			 /*
+	          * make it easier on level one
+	          */
+                    damage = (damage+1) / 2;
+			/*
+			 * copy protection goodies
+			 */
+			if (thdef == &player)
+				damage *= hit_mul;
 	    def->s_hpt -= max(0, damage);
 	    did_hit = TRUE;
 	}
-	if ((cp = strchr(cp, '/')) == NULL)
+	if ((cp = stpchr(cp, '/')) == NULL)
 	    break;
 	cp++;
     }
@@ -442,21 +415,19 @@ bool hurl;
  *	The print name of a combatant
  */
 char *
-prname(mname, upper)
-register char *mname;
+prname(who, upper)
+register char *who;
 bool upper;
 {
-    static char tbuf[MAXSTR];
-
     *tbuf = '\0';
-    if (mname == 0)
-	strcpy(tbuf, "you"); 
-    else if (strcmp(mname, "it") == 0 || strcmp(mname, "something") == 0)
-	strcpy(tbuf, (terse ? "it" : "something"));
+    if (who == 0)
+	strcpy(tbuf, you); 
+    else if (on(player, ISBLIND))
+	strcpy(tbuf, it);
     else
     {
 	strcpy(tbuf, "the ");
-	strcat(tbuf, mname);
+	strcat(tbuf, who);
     }
     if (upper)
 	*tbuf = toupper(*tbuf);
@@ -473,20 +444,14 @@ register char *er, *ee;
     register char *s;
 
     addmsg(prname(er, TRUE));
-    if (terse)
-	s = " hit";
-    else
-	switch (rnd(4))
-	{
-	    when 0: s = " scored an excellent hit on ";
-	    when 1: s = " hit ";
-	    when 2: s = (er == 0 ? " have injured " : " has injured ");
-	    when 3: s = (er == 0 ? " swing and hit " : " swings and hits ");
-	}
-    addmsg(s);
-    if (!terse)
-	addmsg(prname(ee, FALSE));
-    endmsg();
+    switch ((terse || expert) ? 1 : rnd(4))
+    {
+	 when 0: s = " scored an excellent hit on ";
+	 when 1: s = " hit ";
+	 when 2: s = (er == 0 ? " have injured " : " has injured ");
+	 when 3: s = (er == 0 ? " swing and hit " : " swings and hits ");
+    }
+    msg("%s%s",s,prname(ee, FALSE));
 }
 
 /*
@@ -498,18 +463,16 @@ register char *er, *ee;
 {
     register char *s;
 
+    
     addmsg(prname(er, TRUE));
-    switch (terse ? 0 : rnd(4))
+    switch ((terse || expert) ? 1 : rnd(4))
     {
-	when 0: s = (er == 0 ? " miss" : " misses");
-	when 1: s = (er == 0 ? " swing and miss" : " swings and misses");
+	when 0: s = (er == 0 ? " swing and miss" : " swings and misses");
+	when 1: s = (er == 0 ? " miss" : " misses");
 	when 2: s = (er == 0 ? " barely miss" : " barely misses");
 	when 3: s = (er == 0 ? " don't hit" : " doesn't hit");
     }
-    addmsg(s);
-    if (!terse)
-	addmsg(" %s", prname(ee, FALSE));
-    endmsg();
+    msg("%s %s",s,prname(ee, FALSE));
 }
 
 /*
@@ -533,12 +496,11 @@ THING *tp;
 save(which)
 register int which;
 {
-    if (which == VS_MAGIC)
-    {
-	if (ISRING(LEFT, R_PROTECT))
-	    which -= cur_ring[LEFT]->o_ac;
-	if (ISRING(RIGHT, R_PROTECT))
-	    which -= cur_ring[RIGHT]->o_ac;
+    if (which == VS_MAGIC) {
+		if (ISRING(LEFT, R_PROTECT))
+		    which -= cur_ring[LEFT]->o_ac;
+		if (ISRING(RIGHT, R_PROTECT))
+		    which -= cur_ring[RIGHT]->o_ac;
     }
     return save_throw(which, &player);
 }
@@ -550,15 +512,19 @@ register int which;
 str_plus(str)
 register str_t str;
 {
-    if (str == 31)
-	return 3;
-    if (str > 20)
-	return 2;
-    if (str > 16)
-	return 1;
-    if (str > 6)
-	return 0;
-    return str - 7;
+    register int add = 4;
+
+    if (str < 8)
+    	return str - 7;
+    if (str < 31)
+    	add--;
+    if (str < 21)
+	add--;
+    if (str < 19)
+    	add--;
+    if (str < 17)
+	add--;
+    return add;
 }
 
 /*
@@ -568,21 +534,23 @@ register str_t str;
  add_dam(str)
  register str_t str;
  {
-    if (str == 31)
-	return 6;
-    if (str > 21)
-	return 5;
-    if (str == 21)
-	return 4;
-    if (str > 18)
-	return 3;
-    if (str == 18)
-	return 2;
-    if (str > 15)
-	return 1;
-    if (str > 6)
-	return 0;
-    return str - 7;
+    int add = 6;
+
+    if (str < 8)
+	return str - 7;
+    if (str < 31)
+	add--;
+    if (str < 22)
+	add--;
+    if (str < 20)
+	add--;
+    if (str < 18)
+	add--;
+    if (str < 17)
+	add--;
+    if (str < 16)
+	add--;
+    return add;
 }
 
 /*
@@ -597,37 +565,20 @@ raise_level()
 
 /*
  * thunk:
- *	A missile hits a monster
+ *	A missile hit or missed a monster
  */
-thunk(weap, mname)
+thunk(weap, mname, does, did)
 register THING *weap;
-register char *mname;
+register char *mname, *does, *did;
 {
     if (weap->o_type == WEAPON)
-	addmsg("the %s hits ", w_names[weap->o_which]);
+	addmsg("the %s %s ", w_names[weap->o_which], does);
     else
-	addmsg("you hit ");
-    if (strcmp(mname, "it") == 0 || strcmp(mname, "something") == 0)
-	msg(terse ? "it" : "something");
+	addmsg("you %s ", did);
+    if (on(player, ISBLIND))
+	msg(it);
     else
 	msg("the %s", mname);
-}
-
-/*
- * bounce:
- *	A missile misses a monster
- */
-bounce(weap, mname)
-register THING *weap;
-register char *mname;
-{
-    if (weap->o_type == WEAPON)
-	addmsg("the %s misses ", w_names[weap->o_which]);
-    else
-	addmsg("you missed ");
-    if (strcmp(mname, "it") != 0 && strcmp(mname, "something") != 0)
-	addmsg("the ");
-    msg(mname);
 }
 
 /*
@@ -636,23 +587,31 @@ register char *mname;
  */
 remove(mp, tp, waskill)
 register coord *mp;
-register THING *tp;
+THING *tp;
 bool waskill;
 {
     register THING *obj, *nexti;
 
+    if (tp == NULL)
+    	return;
+
     for (obj = tp->t_pack; obj != NULL; obj = nexti)
     {
 	nexti = next(obj);
-	obj->o_pos = tp->t_pos;
+	bcopy(obj->o_pos,tp->t_pos);
 	detach(tp->t_pack, obj);
 	if (waskill)
 	    fall(obj, FALSE);
 	else
 	    discard(obj);
     }
-    moat(mp->y, mp->x) = NULL;
-    mvaddch(mp->y, mp->x, tp->t_oldch);
+    if (_level[INDEX(mp->y,mp->x)] == PASSAGE)
+    	standout();
+    if (tp->t_oldch == FLOOR && !cansee(mp->y, mp->x))
+        mvaddch(mp->y, mp->x, ' ');
+    else if (tp->t_oldch != '@')
+        mvaddch(mp->y, mp->x, tp->t_oldch);
+    standend();
     detach(mlist, tp);
     discard(tp);
 }
@@ -685,17 +644,9 @@ register THING *obj;
  *	Called to put a monster to death
  */
 killed(tp, pr)
-register THING *tp;
+THING *tp;
 bool pr;
 {
-    register char *mname;
-
-    if (pr)
-	if (!on(player, ISTrip))
-	    mname = monsters[tp->t_type-'A'].m_name;
-	else
-	    mname = monsters[toascii(mvinch(tp->t_pos.y,tp->t_pos.x))-'A'].m_name;
-
     pstats.s_exp += tp->t_stats.s_exp;
     /*
      * If the monster was a violet fungi, un-hold him
@@ -704,22 +655,18 @@ bool pr;
     {
 	when 'F':
 	    player.t_flags &= ~ISHELD;
-	    fung_hit = 0;
-	    strcpy(monsters['F'-'A'].m_stats.s_dmg, "000d0");
+	    f_restor();
 	when 'L':
 	{
 	    register THING *gold;
 
-	    if (fallpos(&tp->t_pos, &tp->t_room->r_gold, TRUE))
-	    {
-		gold = new_item();
-		gold->o_type = GOLD;
-		gold->o_goldval = GOLDCALC;
-		if (save(VS_MAGIC))
-		    gold->o_goldval += GOLDCALC + GOLDCALC
-				     + GOLDCALC + GOLDCALC;
-		attach(tp->t_pack, gold);
-	    }
+	    if ((gold = new_item()) == NULL)
+			return;
+	    gold->o_type = GOLD;
+	    gold->o_goldval = GOLDCALC;
+	    if (save(VS_MAGIC))
+			gold->o_goldval += GOLDCALC + GOLDCALC + GOLDCALC + GOLDCALC;
+	    attach(tp->t_pack, gold);
 	}
     }
     /*
@@ -728,21 +675,15 @@ bool pr;
     remove(&tp->t_pos, tp, TRUE);
     if (pr)
     {
-	if (!terse)
-	    addmsg("you have ");
-	addmsg("defeated ");
-	if (on(player, ISBLIND) ||
-	   (on(*tp, ISINVIS) && !on(player, CANSEE|SEEMONST)))
-		msg(terse ? "it" : "something");
+	addmsg("you have defeated ");
+	if (on(player, ISBLIND))
+	    msg(it);
 	else
-	{
-	    if (!terse)
-		addmsg("the ");
-	    msg(mname);
-	}
+	    msg("the %s", monsters[tp->t_type-'A'].m_name);
     }
     /*
      * Do adjustments if he went up a level
      */
     check_level();
 }
+

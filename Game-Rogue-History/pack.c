@@ -1,12 +1,25 @@
-#include <curses.h>
-#include <ctype.h>
 #include "rogue.h"
+#include "curses.h"
 
 /*
  * Routines to deal with the pack
  *
- * @(#)pack.c	4.16 (NMT from Berkeley 5.2) 8/25/83
+ * pack.c	1.4 (A.I. Design)	12/14/84
  */
+
+THING *
+pack_obj(ch, chp)
+byte ch, *chp;
+{
+	register THING *obj;
+	register byte och;
+
+    for (obj = pack, och = 'a'; obj != NULL; obj = next(obj), och++)
+		if (ch == och)
+			return obj;
+	*chp = och;
+	return NULL;
+}
 
 /*
  * add_pack:
@@ -20,7 +33,7 @@ bool silent;
 {
     register THING *op, *lp;
     register bool exact, from_floor;
-    register char floor;
+    register byte floor;
 
     if (obj == NULL)
     {
@@ -34,9 +47,9 @@ bool silent;
      * Link it into the pack.  Search the pack for a object of similar type
      * if there isn't one, stuff it at the beginning, if there is, look for one
      * that is exactly the same and just increment the count if there is.
-     * it  that.  Food is always put at the beginning for ease of access, but
+     * Food is always put at the beginning for ease of access, but it
      * is not ordered so that you can't tell good food from bad.  First check
-     * to see if there is something in thr same group and if there is then
+     * to see if there is something in the same group and if there is then
      * increment the count.
      */
     floor = (proom->r_flags & ISGONE) ? PASSAGE : FLOOR;
@@ -49,7 +62,7 @@ bool silent;
 		/*
 		 * Put it in the pack and notify the user
 		 */
-		op->o_count++;
+		op->o_count += obj->o_count;
 		if (from_floor)
 		{
 		    detach(lvl_obj, obj);
@@ -65,7 +78,7 @@ bool silent;
     /*
      * Check if there is room
      */
-    if (inpack == MAXPACK-1)
+    if (inpack >= MAXPACK-1)
     {
 	msg("you can't carry anything else");
 	return;
@@ -79,7 +92,7 @@ bool silent;
 	    detach(lvl_obj, obj);
 	    mvaddch(hero.y, hero.x, floor);
 	    chat(hero.y, hero.x) = floor;
-	    msg("the scroll turns to dust as you pick it up");
+		msg("the scroll turns to dust%s.", noterse(" as you pick it up"));
 	    return;
 	}
 	else
@@ -168,57 +181,71 @@ picked_up:
      * get mad and run at the hero
      */
     for (op = mlist; op != NULL; op = next(op))
-	if (op->t_dest = &obj->o_pos)
+	/*
+	 *  compiler bug: jll : 2-7-83
+	 *		It is stupid because it thinks the obj... is not an lvalue
+	 *		this may be true since there is no structure assignments,
+	 *		but still it should let you have the address??!!
+	 *
+	if (&obj->_o._o_pos == op->t_dest)
+	 *
+	 *  the following should do the same
+	 */  
+	if ((op->t_dest->x == obj->o_pos.x) && (op->t_dest->y == obj->o_pos.y))
 	    op->t_dest = &hero;
 
     if (obj->o_type == AMULET)
+    {
 	amulet = TRUE;
+	saw_amulet = TRUE;
+    }
     /*
      * Notify the user
      */
     if (!silent)
-    {
-	if (!terse)
-	    addmsg("you now have ");
-	msg("%s (%c)", inv_name(obj, !terse), pack_char(obj));
-    }
+	msg("%s%s (%c)",noterse("you now have "),
+		inv_name(obj, TRUE), pack_char(obj));
 }
 
 /*
  * inventory:
  *	List what is in the pack
  */
-inventory(list, type)
+inventory(list, type, lstr)
 THING *list;
 int type;
+char *lstr;
 {
-    register char ch;
+    register byte ch;
     register int n_objs;
     char inv_temp[MAXSTR];
 
     n_objs = 0;
     for (ch = 'a'; list != NULL; ch++, list = next(list))
     {
+	/*
+	 * Don't print this one if:
+	 *	the type doesn't match the type we were passed AND
+	 *	it isn't a callable type AND
+	 *	it isn't a zappable weapon
+	 */
 	if (type && type != list->o_type && !(type == CALLABLE &&
 	    (list->o_type == SCROLL || list->o_type == POTION ||
-	     list->o_type == RING || list->o_type == STICK)))
+	     list->o_type == RING || list->o_type == STICK)) &&
+	     !(type == WEAPON && list->o_type == POTION) &&
+	     !(type == STICK && list->o_enemy && list->o_charges))
 		continue;
 	n_objs++;
 	sprintf(inv_temp, "%c) %%s", ch);
-	add_line(inv_temp, inv_name(list, FALSE));
+	add_line(lstr, inv_temp, inv_name(list, FALSE));
     }
     if (n_objs == 0)
     {
-	if (terse)
-	    msg(type == 0 ? "empty handed" :
-			    "nothing appropriate");
-	else
-	    msg(type == 0 ? "you are empty handed" :
+	msg(type == 0 ? "you are empty handed" :
 			    "you don't have anything appropriate");
 	return FALSE;
     }
-    end_line();
-    return TRUE;
+    return(end_line(lstr));
 }
 
 /*
@@ -226,7 +253,7 @@ int type;
  *	Add something to characters pack.
  */
 pick_up(ch)
-char ch;
+byte ch;
 {
     register THING *obj;
 
@@ -241,9 +268,6 @@ char ch;
 	    proom->r_goldval = 0;
 	    break;
 	default:
-#ifdef WIZARD
-	    debug("Where did you pick a '%s' up???", unctrl(ch));
-#endif
 	case ARMOR:
 	case POTION:
 	case FOOD:
@@ -258,40 +282,6 @@ char ch;
 }
 
 /*
- * picky_inven:
- *	Allow player to inventory a single item
- */
-picky_inven()
-{
-    register THING *obj;
-    register char ch, mch;
-
-    if (pack == NULL)
-	msg("you aren't carrying anything");
-    else if (next(pack) == NULL)
-	msg("a) %s", inv_name(pack, FALSE));
-    else
-    {
-	msg(terse ? "item: " : "which item do you wish to inventory: ");
-	mpos = 0;
-	if ((mch = readchar()) == ESCAPE)
-	{
-	    msg("");
-	    return;
-	}
-	for (ch = 'a', obj = pack; obj != NULL; obj = next(obj), ch++)
-	    if (ch == mch)
-	    {
-		msg("%c) %s",ch,inv_name(obj, FALSE));
-		return;
-	    }
-	if (!terse)
-	    msg("'%s' not in pack", unctrl(mch));
-	msg("range is 'a' to '%c'", --ch);
-    }
-}
-
-/*
  * get_item:
  *	Pick something out of a pack for a purpose
  */
@@ -301,52 +291,79 @@ char *purpose;
 int type;
 {
     register THING *obj;
-    register char ch, och;
+    register byte ch;
+	byte och;
+    static byte lch;
+	static THING *wasthing = NULL;
+    byte gi_state;	/* get item sub state */
+    int once_only = FALSE;
 
+	if (((!strncmp(s_menu,"sel",3) && strcmp(purpose,"eat") 
+		 && strcmp(purpose,"drop"))) || !strcmp(s_menu,"on"))
+			once_only = TRUE;
+
+    gi_state = again;
     if (pack == NULL)
-	msg("you aren't carrying anything");
-    else
-    {
-	for (;;)
-	{
-	    if (!terse)
-		addmsg("which object do you want to ");
-	    addmsg(purpose);
-	    if (terse)
-		addmsg(" what");
-	    msg("? (* for list): ");
-	    ch = readchar();
-	    mpos = 0;
-	    /*
-	     * Give the poor player a chance to abort the command
-	     */
-	    if (ch == ESCAPE || ch == CTRL(G))
-	    {
-		after = FALSE;
-		msg("");
-		return NULL;
-	    }
-	    if (ch == '*')
-	    {
-		mpos = 0;
-		if (inventory(pack, type) == 0)
-		{
-		    after = FALSE;
-		    return NULL;
+		msg("you aren't carrying anything");
+    else {
+        ch = lch;
+		for (;;) {
+		    /*
+		     * if we are doing something AGAIN, and the pack hasn't
+		     * changed then don't ask just give him the same thing
+		     * he got on the last command.
+		     */
+		    if (gi_state && wasthing == pack_obj(ch, &och))
+		        goto skip;
+		    if (once_only) {
+		    	ch = '*';
+		    	goto skip;
+		    }
+		    if (!terse && !expert)
+				addmsg("which object do you want to ");
+		    msg("%s? (* for list): ",purpose);
+		    /*
+		     * ignore any alt characters that may be typed
+		     */
+		    ch = readchar();
+		    skip:
+		    mpos = 0;
+		    gi_state = FALSE;
+    	    once_only = FALSE;
+		    if (ch == '*') {
+				if ((ch = inventory(pack, type, purpose)) == 0) {
+				    after = FALSE;
+				    return NULL;
+				}
+				if (ch == ' ')
+				    continue;
+				lch = ch;
+		    }
+		    /*
+		     * Give the poor player a chance to abort the command
+		     */
+		    if (ch == ESCAPE) {
+				after = FALSE;
+				msg("");
+				return NULL;
+		    }
+		    if ((obj = pack_obj(ch, &och)) == NULL) {
+				ifterse1("range is 'a' to '%c'","please specify a letter between 'a' and '%c'", och-1);
+				continue;
+		    } else {
+		        /*
+		         * If you find an object reset flag because
+		         * you really don't know if the object he is getting
+		         * is going to change the pack.  If he detaches the
+		         * thing from the pack later this flag will get set.
+		         */
+				if (strcmp(purpose, "identify")) {
+				    lch = ch;
+					wasthing = obj;
+				}
+				return obj;
+		   }
 		}
-		continue;
-	    }
-	    for (obj = pack, och = 'a'; obj != NULL; obj = next(obj), och++)
-		if (ch == och)
-		    break;
-	    if (obj == NULL)
-	    {
-		msg("please specify a letter between 'a' and '%c'", och-1);
-		continue;
-	    }
-	    else 
-		return obj;
-	}
     }
     return NULL;
 }
@@ -359,7 +376,7 @@ pack_char(obj)
 register THING *obj;
 {
     register THING *item;
-    register char c;
+    register byte c;
 
     c = 'a';
     for (item = pack; item != NULL; item = next(item))
@@ -377,7 +394,7 @@ register THING *obj;
 money(value)
 register int value;
 {
-    register char floor;
+    register byte floor;
 
     floor = (proom->r_flags & ISGONE) ? PASSAGE : FLOOR;
     purse += value;
@@ -385,8 +402,6 @@ register int value;
     chat(hero.y, hero.x) = floor;
     if (value > 0)
     {
-	if (!terse)
-	    addmsg("you found ");
-	msg("%d gold pieces", value);
+	msg("you found %d gold pieces", value);
     }
 }

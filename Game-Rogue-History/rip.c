@@ -2,221 +2,225 @@
  * File for the fun ends
  * Death or a total win
  *
- * @(#)rip.c	4.32 (NMT from Berkeley 5.2) 8/25/83
+ * rip.c	1.4 (A.I. Design)	12/14/84
  */
 
-#include <curses.h>
-#ifdef	attron
-#include <term.h>
-#endif	attron
-#include <time.h>
-#include <signal.h>
-#include <sys/types.h>
-#include <pwd.h>
 #include "rogue.h"
-#include "score.h"
+#include "curses.h"
 
-#ifdef	attron
-# define	_puts(s)	tputs(s, 0, _putchar);
-#endif
-
-static char *rip[] = {
-"                       __________",
-"                      /          \\",
-"                     /    REST    \\",
-"                    /      IN      \\",
-"                   /     PEACE      \\",
-"                  /                  \\",
-"                  |                  |",
-"                  |                  |",
-"                  |   killed by a    |",
-"                  |                  |",
-"                  |       1984       |",
-"                 *|     *  *  *      | *",
-"         ________)/\\\\_//(\\/(/\\)/\\//\\/|_)_______",
-    0
-};
+static int sc_fd;
+/*
+ * external curses IBM (jll)
+ */
+extern int scr_type;
 
 /*
  * score:
  *	Figure score and post it.
  */
 /* VARARGS2 */
+
+
 score(amount, flags, monst)
 int amount, flags;
 char monst;
 {
-    register SCORE *scp;
-    register int i;
-    register SCORE *sc2;
-    register FILE *outf;
-    register int prflags = 0;
-    register int (*fp)(), uid;
+#ifndef DEMO
+#ifndef WIZARD
+    struct sc_ent his_score, top_ten[TOPSCORES];
+    register int newfile = FALSE, rank=0;
+    char response = ' ';
 
-    static SCORE top_ten[10];
-    static char  *reason[] = {
-	"killed",
-	"quit",
-	"A total winner",
-    };
-    int	endit();
 
-    start_score();
+    is_saved = TRUE;
 
-    if (flags != -1)
-	endwin();
-
-    if (fd >= 0)
-	outf = fdopen(fd, "w");
-    else
-	return;
-
-    for (scp = top_ten; scp < &top_ten[10]; scp++)
+    if (amount || flags || monst)
     {
-	scp->sc_score = 0;
-	for (i = 0; i < MAXSTR; i++)
-	    scp->sc_name[i] = rnd(255);
-	scp->sc_flags = RN;
-	scp->sc_level = RN;
-	scp->sc_monster = RN;
-	scp->sc_uid = RN;
+	move(LINES-1,0);
+        cursor(TRUE);
+
+       printw("[Press Enter to see rankings]");
+       flush_type();
+       wait_for('\r');
+    	
+       move(LINES-1,0);
     }
-
-    signal(SIGINT, SIG_DFL);
-    if (flags != -1
-#ifdef WIZARD
-	    || wizard
-#endif
-	)
+    while ((sc_fd = open(s_score, 0)) < 0)
     {
-	printf("[Press return to continue]");
-	fflush(stdout);
-	gets(prbuf);
-    }
-#ifdef WIZARD
-    if (wizard)
-	if (strcmp(prbuf, "names") == 0)
-	    prflags = 1;
-	else if (strcmp(prbuf, "edit") == 0)
-	    prflags = 2;
-#endif
-    encread((char *) top_ten, sizeof top_ten, fd);
-    /*
-     * Insert her in list if need be
-     */
-    sc2 = NULL;
-    if (!noscore)
-    {
-	uid = getuid();
-	for (scp = top_ten; scp < &top_ten[10]; scp++)
-	    if (amount > scp->sc_score)
+        printw("\n");
+        if (noscore || (amount == 0))
+            return;
+        str_attr("No scorefile: %Create %Retry %Abort");
+        reread:
+        switch(response = readchar())
+        {
+     	    case 'c':
+    	    case 'C':
+				close(creat(s_score, 0666));
+	    case 'r':
+	    case 'R':
 		break;
-	    else if (flags != 2 && scp->sc_uid == uid && scp->sc_flags != 2)
-		scp = &top_ten[10];	/* only one score per nowin uid */
-	if (scp < &top_ten[10])
-	{
-	    if (flags != 2)
-		for (sc2 = scp; sc2 < &top_ten[10]; sc2++)
-		{
-		    if (sc2->sc_uid == uid && sc2->sc_flags != 2)
-			break;
-		}
-	    else
-		sc2 = &top_ten[9];
-	    while (sc2 > scp)
-	    {
-		*sc2 = sc2[-1];
-		sc2--;
-	    }
-	    scp->sc_score = amount;
-	    strncpy(scp->sc_name, whoami, MAXSTR);
-	    scp->sc_flags = flags;
-	    if (flags == 2)
-		scp->sc_level = max_level;
-	    else
-		scp->sc_level = level;
-	    scp->sc_monster = monst;
-	    scp->sc_uid = uid;
-	    sc2 = scp;
+	    case 'a':
+	    case 'A':
+		return;
+	    default:
+		goto reread;
 	}
     }
-    /*
-     * Print the list
-     */
-    printf("\nTop Ten Rogueists:\nRank\tScore\tName\n");
-    for (scp = top_ten; scp < &top_ten[10]; scp++)
-    {
-	int _putchar();
+    printw("\n");
+    get_scores(&top_ten);
 
-	if (scp->sc_score) {
-#ifndef	attron
-	    if (sc2 == scp && SO)
-		_puts(SO);
-#else	attron
-	    if (sc2 == scp && enter_standout_mode)
-		_puts(enter_standout_mode);
-#endif	attron
-	    printf("%d\t%d\t%s: %s on level %d", scp - top_ten + 1,
-		scp->sc_score, scp->sc_name, reason[scp->sc_flags],
-		scp->sc_level);
-	    if (scp->sc_flags == 0)
-		printf(" by %s", killname((char) scp->sc_monster, TRUE));
-	    if (prflags == 1)
-	    {
-		struct passwd *pp, *getpwuid();
-
-		if ((pp = getpwuid(scp->sc_uid)) == NULL)
-		    printf(" (%d)", scp->sc_uid);
-		else
-		    printf(" (%s)", pp->pw_name);
-		putchar('\n');
-	    }
-	    else if (prflags == 2)
-	    {
-		fflush(stdout);
-		gets(prbuf);
-		if (prbuf[0] == 'd')
-		{
-		    for (sc2 = scp; sc2 < &top_ten[9]; sc2++)
-			*sc2 = *(sc2 + 1);
-		    top_ten[9].sc_score = 0;
-		    for (i = 0; i < MAXSTR; i++)
-			top_ten[9].sc_name[i] = rnd(255);
-		    top_ten[9].sc_flags = RN;
-		    top_ten[9].sc_level = RN;
-		    top_ten[9].sc_monster = RN;
-		    scp--;
-		}
-	    }
-	    else
-		printf(".\n");
-#ifndef	attron
-	    if (sc2 == scp && SE)
-		_puts(SE);
-#else	attron
-	    if (sc2 == scp && exit_standout_mode)
-		_puts(exit_standout_mode);
-#endif	attron
-	}
-	else
-	    break;
-    }
-    fseek(outf, 0L, 0);
-    /*
-     * Update the list file
-     */
-    if (sc2 != NULL)
+    if (noscore != TRUE) 
     {
-	if (lock_sc())
-	{
-	    fp = signal(SIGINT, SIG_IGN);
-	    encwrite((char *) top_ten, sizeof top_ten, outf);
-	    unlock_sc();
-	    signal(SIGINT, fp);
-	}
+	strcpy(his_score.sc_name,whoami);
+	his_score.sc_gold = amount;
+	his_score.sc_fate = flags ? flags : monst;
+	his_score.sc_level = max_level;
+	his_score.sc_rank  = pstats.s_lvl;
+	rank = add_scores(&his_score,&top_ten);
     }
-    fclose(outf);
+	close(sc_fd);
+    if (rank > 0) {
+    	if ((sc_fd = creat(s_score, 0666)) >= 0) {
+    	    put_scores(&top_ten);
+			close(sc_fd);
+		}
+    }
+    pr_scores(rank,&top_ten);
+#endif WIZARD
+#endif DEMO
 }
+
+#ifndef DEMO
+#ifndef WIZARD
+get_scores(top10)
+	struct sc_ent *top10;
+{
+	register int i, retcode = 1;
+
+	for(i=0; i<TOPSCORES; i++,top10++) {
+		if (retcode > 0)
+			retcode = read(sc_fd,top10,sizeof(struct sc_ent));
+		if (retcode <= 0)
+			top10->sc_gold = 0;
+	}
+}
+
+
+put_scores(top10)
+	struct sc_ent *top10;
+{
+    register int i;
+    
+    for (i=0;(i<TOPSCORES) && top10->sc_gold;i++,top10++) 
+    {
+	if (write(sc_fd,top10,sizeof(struct sc_ent)) <= 0)
+            return;
+    }
+}
+
+pr_scores(newrank,top10)
+	int newrank;
+	struct sc_ent *top10;
+{
+    register int i;
+    register char *ki;
+    int curl;
+    char dthstr[30];
+    char *altmsg;
+
+	switch_page(old_page_no);
+	clear();
+    high();
+    if (scr_type == 7)
+        standout();
+    mvaddstr(0,0,"Guildmaster's Hall Of Fame:");
+    standend();
+	yellow();
+    mvaddstr(2,0,"Gold");
+
+    for (i=0;i<TOPSCORES;i++,top10++)
+    {
+		altmsg = NULL;
+    	brown();
+    	if (newrank - 1 == i)
+    	{
+    	    if (scr_type == 7)
+    	    	standout();
+    	    else
+    	        yellow();
+    	}
+	if (top10->sc_gold <=0 )
+		break;
+	curl = 4 + ((COLS==40)?(i * 2):i);
+	move (curl,0);
+	printw("%d ",top10->sc_gold);
+	move (curl,6);
+	if (newrank - 1 != i)
+		red();
+	printw("%s",top10->sc_name);
+	if ((newrank) - 1 != i)
+	    brown();
+        if (top10->sc_level >= 26)
+            altmsg = " Honored by the Guild";
+	if (isalpha(top10->sc_fate))
+        {
+            sprintf(dthstr," killed by %s",
+            		killname((0xff & top10->sc_fate), TRUE));
+            if (COLS == 40 && strlen(dthstr) > 23)
+            	strcpy(dthstr," killed");
+        }
+	else
+	    switch(top10->sc_fate) {
+		    case 2:
+	   	        altmsg = " A total winner!";
+	    	        break;
+	            case 1:
+	                strcpy(dthstr," quit");
+	                break;
+	            default:
+	                strcpy(dthstr," wierded out");
+	    }
+	if ((strlen(top10->sc_name) + 10 + 
+		strlen(he_man[top10->sc_rank-1])) < COLS)
+	{
+	    if (top10->sc_rank > 1 && (strlen(top10->sc_name)))
+	        printw(" \"%s\"",he_man[top10->sc_rank - 1]);
+	}
+	if (COLS == 40)
+        move(curl+1,6);
+        if (altmsg == NULL)
+            printw("%s on level %d",dthstr,top10->sc_level);
+        else
+            addstr(altmsg);
+    }
+    standend();
+    if (COLS == 80)
+    	addstr("\n\n\n\n");
+}
+
+add_scores(newscore,oldlist)
+	struct sc_ent *newscore, *oldlist;
+{
+    register struct sc_ent *sentry, *insert;
+    int retcode = TOPSCORES+1;
+
+    for(sentry=&oldlist[TOPSCORES-1];sentry>=oldlist;sentry--) {
+	if ((unsigned)newscore->sc_gold > (unsigned)sentry->sc_gold) {
+	    insert = sentry;
+	    retcode--;
+	    if ((insert < &oldlist[TOPSCORES-1]) && sentry->sc_gold)
+			sentry[1] = *sentry;
+	} else
+	    break;
+   }
+   if (retcode == 11) 
+   	return 0;
+   *insert = *newscore;
+   return retcode;
+}
+#endif WIZARD
+#endif DEMO
 
 /*
  * death:
@@ -225,37 +229,68 @@ char monst;
 death(monst)
 register char monst;
 {
-    register char **dp = rip, *killer;
-    register struct tm *lt;
-    time_t date;
+    register char *killer;
     char buf[MAXSTR];
-    struct tm *localtime();
+    register int year;
+#ifndef DEMO
 
-    signal(SIGINT, SIG_IGN);
     purse -= purse / 10;
-    signal(SIGINT, leave);
-    time(&date);
-    lt = localtime(&date);
+
+    switch_page(old_page_no);
     clear();
-    move(8, 0);
-    while (*dp)
-	printw("%s\n", *dp++);
-    mvaddstr(14, 28-((strlen(whoami)+1)/2), whoami);
-    sprintf(buf, "%d Au", purse);
-    mvaddstr(15, 28-((strlen(buf)+1)/2), buf);
-    killer = killname(monst, FALSE);
-    mvaddstr(17, 28-((strlen(killer)+1)/2), killer);
-    if (monst == 's')
-	mvaddch(16, 32, ' ');
-    else
-	mvaddstr(16, 33, vowelstr(killer));
-    mvaddstr(18, 28, sprintf(prbuf, "%2d", lt->tm_year));
+    drop_curtain();
+    if (is_color)
+    	brown();
+    box((COLS==40)?1:7,(COLS-28)/2,22,(COLS+28)/2);
+    standend();
+
+    center(10, "REST");
+    center(11, "IN");
+    center(12, "PEACE");
+    red();
+    center(21, "  *    *      * ");
+    green();
+    center(22, "___\\/(\\/)/(\\/ \\\\(//)\\)\\/(//)\\\\)//(\\__");
+    standend();
+
+    if (scr_type == 7)
+        uline();
+    center(14, your_na);
+    standend();
+
+    killer = killname(monst, TRUE);
+
+    strcpy(buf,"killed by");
+
+    center(15,buf);
+    center(16, kild_by);
+
+    sprintf(buf, "%u Au", purse);
+    center(18, buf);
+
+	regs->ax = 0x2a << 8;
+	swint(SW_DOS,regs);
+	year = regs->cx;
+    sprintf(buf, "%u", year);
+    center(19, buf);
+	raise_curtain();
     move(LINES-1, 0);
-    refresh();
-    mvprintf(0,0,"Doing score\n");
-    refresh();
     score(purse, 0, monst);
-    exit(0);
+#else DEMO
+    demo(0);
+    killer = killname(monst, TRUE);
+
+    strcpy(buf,"This time you were killed by");
+    strcat(buf," ");
+    strcat(buf,killer);
+    if (strlen(buf) > (COLS-2))
+    	center(6,"This time you were killed");
+    else
+        center(6, buf);
+	move(LINES-2,0);
+#endif DEMO
+    wclose(0);
+    exit();
 }
 
 /*
@@ -264,29 +299,40 @@ register char monst;
  */
 total_winner()
 {
+#ifndef DEMO
     register THING *obj;
     register int worth;
-    register char c;
+    register byte c;
     register int oldpurse;
 
+	switch_page(old_page_no);
     clear();
+#ifdef MINROG
+    if (!terse)
+    {
     standout();
-    addstr("                                                               \n");
-    addstr("  @   @               @   @           @          @@@  @     @  \n");
-    addstr("  @   @               @@ @@           @           @   @     @  \n");
-    addstr("  @   @  @@@  @   @   @ @ @  @@@   @@@@  @@@      @  @@@    @  \n");
-    addstr("   @@@@ @   @ @   @   @   @     @ @   @ @   @     @   @     @  \n");
-    addstr("      @ @   @ @   @   @   @  @@@@ @   @ @@@@@     @   @     @  \n");
-    addstr("  @   @ @   @ @  @@   @   @ @   @ @   @ @         @   @  @     \n");
-    addstr("   @@@   @@@   @@ @   @   @  @@@@  @@@@  @@@     @@@   @@   @  \n");
-    addstr("                                                               \n");
-    addstr("     Congratulations, you have made it to the light of day!    \n");
+    printw("                                                               \n");
+    printw("  @   @               @   @           @          @@@  @     @  \n");
+    printw("  @   @               @@ @@           @           @   @     @  \n");
+    printw("  @   @  @@@  @   @   @ @ @  @@@   @@@@  @@@      @  @@@    @  \n");
+    printw("   @@@@ @   @ @   @   @   @     @ @   @ @   @     @   @     @  \n");
+    printw("      @ @   @ @   @   @   @  @@@@ @   @ @@@@@     @   @     @  \n");
+    printw("  @   @ @   @ @  @@   @   @ @   @ @   @ @         @   @  @     \n");
+    printw("   @@@   @@@   @@ @   @   @  @@@@  @@@@  @@@     @@@   @@   @  \n");
+    }
+    printw("                                                               \n");
+    printw("     Congratulations, you have made it to the light of day!    \n");
     standend();
-    addstr("\nYou have joined the elite ranks of those who have escaped the\n");
-    addstr("Dungeons of Doom alive.  You journey home and sell all your loot at\n");
-    addstr("a great profit and are admitted to the fighters guild.\n");
+    printw("\nYou have joined the elite ranks of those who have escaped the\n");
+    printw("Dungeons of Doom alive.  You journey home and sell all your loot at\n");
+    printw("a great profit and are admitted to the fighters guild.\n");
+#else
+    printw("Congratulations!\n\nYou have made it to the light of day!\n\n\n\n");
+    printw("You journey home and sell all your\n");
+    printw("loot at a great profit and are\n");
+    printw("admitted to the fighters guild.\n\n\n");
+#endif MINROG
     mvaddstr(LINES - 1, 0, "--Press space to continue--");
-    refresh();
     wait_for(' ');
     clear();
     mvaddstr(0, 0, "   Worth  Item");
@@ -364,12 +410,14 @@ total_winner()
 	}
 	if (worth < 0)
 	    worth = 0;
-	mvprintw(c - 'a' + 1, 0, "%c) %5d  %s", c, worth, inv_name(obj, FALSE));
+	move(c - 'a' + 1, 0);
+	printw( "%c) %5d  %s", c, worth, inv_name(obj, FALSE));
 	purse += worth;
     }
-    mvprintw(c - 'a' + 1, 0,"   %5d  Gold Pieces          ", oldpurse);
-    refresh();
+    move(c - 'a' + 1, 0);
+    printw("   %5u  Gold Pieces          ", oldpurse);
     score(purse, 2);
+#endif DEMO
     exit(0);
 }
 
@@ -398,6 +446,8 @@ bool doart;
 	when 's':
 	    sp = "starvation";
 	    article = FALSE;
+	when 'f':
+		sp = "fall";
 	otherwise:
 	    if (monst >= 'A' && monst <= 'Z')
 		sp = monsters[monst-'A'].m_name;
@@ -415,10 +465,74 @@ bool doart;
     return prbuf;
 }
 
-#ifdef	attron
-_putchar(c)
-char c;
+#ifdef DEMO
+/*
+ * For the demonstration version of rogue we really want to
+ * Print out a message when the game ends telling them how
+ * order the game.
+ */
+demo(endtype)
+	int endtype;
 {
-	putchar(c);
+	register int i;
+	char demobuf[81];
+
+	switch_page(old_page_no);
+	clear();
+	if (is_color)
+	    brown();
+	box(0,0,LINES-2,COLS-1);
+	bold();
+	center(2,"ROGUE:  The Adventure Game");
+	standend();
+	if (is_color)
+		lmagenta();
+	sprintf(demobuf,"Sorry, %s but this is just a demonstration",whoami);
+	if (terse)
+		sprintf(demobuf,"Sorry, this is just a demonstration");
+	center(4,demobuf);
+	if (endtype == 1)   /* quiter */
+	{
+		sprintf(demobuf,"You quit with %u pieces of Gold",purse);
+		center(6,demobuf);
+	} else if (endtype == DEMOTIME) {
+	    sprintf(demobuf,"You ended with %u gold pieces",purse);
+		center(6,demobuf);
+    }
+	if (terse)
+        	center(8,"If you're interested in doing some");
+        else
+	        center(8,"But, if you're interested in doing some");
+	center(9,"more exploring in the Dungeons of Doom");
+	if (is_color)
+	    red();
+	center(11,"Please Contact:                      ");
+	if (!is_color)
+		uline();
+	else
+		standend();
+	center(13,"A. I. Design");
+	center(14,"P.O. Box  3685");
+	center(15,"Santa Clara, California 95055");
+	if (is_color)
+		red();
+	center(17,"(408) 296-1634");
+	if (is_color)
+	    yellow();
+	else
+	    standend();
+	center(19,"(C) Copyright 1983");
+	high();
+	center(20,"Artificial Intelligence Design");
+	if (is_color)
+	    yellow();
+	else
+	    standend();
+	center(21,"All Rights Reserved");
+	if (endtype == 0)
+		return;
+	move(LINES-2,0);
+	wclose(0);
+	exit(0);
 }
-#endif	attron
+#endif DEMO
