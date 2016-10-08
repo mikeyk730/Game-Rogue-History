@@ -4,6 +4,7 @@
  */
 
 #include "curses.h"
+#include <stdlib.h>
 #include "rogue.h"
 
 quaff()
@@ -36,7 +37,7 @@ quaff()
      */
     switch(obj->o_which)
     {
-	when P_CONFUSE:
+	case P_CONFUSE:
 	    if (off(player, ISHUH))
 	    {
 		msg("Wait, what's going on here. Huh? What? Who?");
@@ -176,7 +177,7 @@ quaff()
     status();
     if (p_know[obj->o_which] && p_guess[obj->o_which])
     {
-	cfree(p_guess[obj->o_which]);
+	free(p_guess[obj->o_which]);
 	p_guess[obj->o_which] = NULL;
     }
     else if (!p_know[obj->o_which] && askme && p_guess[obj->o_which] == NULL)

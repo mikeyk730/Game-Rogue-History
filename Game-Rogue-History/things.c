@@ -23,7 +23,7 @@ register bool drop;
 
     switch(obj->o_type)
     {
-	when SCROLL:
+	case SCROLL:
 	    if (obj->o_count == 1)
 		strcpy(prbuf, "A scroll ");
 	    else
@@ -262,7 +262,8 @@ new_thing()
     item = new_item(sizeof *cur);
     cur = (struct object *) ldata(item);
     cur->o_hplus = cur->o_dplus = 0;
-    cur->o_damage = cur->o_hurldmg = "0d0";
+    strcpy(cur->o_damage,"0d0");
+    strcpy(cur->o_hurldmg,"0d0");
     cur->o_ac = 11;
     cur->o_count = 1;
     cur->o_group = 0;
@@ -273,7 +274,7 @@ new_thing()
      */
     switch (no_food > 3 ? 2 : pick_one(things, NUMTHINGS))
     {
-	when 0:
+	case 0:
 	    cur->o_type = POTION;
 	    cur->o_which = pick_one(p_magic, MAXPOTIONS);
 	when 1:
@@ -321,7 +322,7 @@ new_thing()
 	    cur->o_which = pick_one(r_magic, MAXRINGS);
 	    switch (cur->o_which)
 	    {
-		when R_ADDSTR:
+		case R_ADDSTR:
 		case R_PROTECT:
 		case R_ADDHIT:
 		case R_ADDDAM:

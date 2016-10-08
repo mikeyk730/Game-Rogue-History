@@ -2,15 +2,11 @@
  * Various input/output functions
  *
  * @(#)io.c	3.10 (Berkeley) 6/15/81
- *
- * HISTORY
- * 08-Mar-87  Michael Mauldin (mlm) at Carnegie-Mellon University
- *	Added preprocessor variable BSD41.  If defined, unctrl() is
- *	declared as a function.
  */
 
 #include "curses.h"
 #include <ctype.h>
+#include <stdarg.h>
 #include "rogue.h"
 
 /*
@@ -22,10 +18,9 @@ static char msgbuf[BUFSIZ];
 static int newpos = 0;
 
 /*VARARGS1*/
-msg(fmt, args)
-char *fmt;
-int args;
+msg(char *fmt, ...)
 {
+    va_list ap;
     /*
      * if the string is "", just clear the line
      */
@@ -39,18 +34,22 @@ int args;
     /*
      * otherwise add to the message and flush it out
      */
-    doadd(fmt, &args);
+    va_start(ap, fmt);
+    doadd(fmt, ap);
+    va_end(ap);
     endmsg();
 }
 
 /*
  * add things to the current message
  */
-addmsg(fmt, args)
-char *fmt;
-int args;
+addmsg(char *fmt, ...)
 {
-    doadd(fmt, &args);
+    va_list ap;
+
+    va_start(ap, fmt);
+    doadd(fmt, ap);
+    va_end(ap);
 }
 
 /*
@@ -74,20 +73,9 @@ endmsg()
     draw(cw);
 }
 
-doadd(fmt, args)
-char *fmt;
-int **args;
+doadd(char *fmt, va_list ap)
 {
-    static FILE junk;
-
-    /*
-     * Do the printf into buf
-     */
-    junk._flag = _IOWRT + _IOSTRG;
-    junk._ptr = &msgbuf[newpos];
-    junk._cnt = 32767;
-    _doprnt(fmt, args, &junk);
-    putc('\0', &junk);
+    vsprintf(&msgbuf[newpos], fmt, ap);
     newpos = strlen(msgbuf);
 }
 
@@ -118,29 +106,8 @@ step_ok(ch)
 
 readchar()
 {
-    char c;
-
-    fflush(stdout);
-    while (read(0, &c, 1) < 0)
-	continue;
-    return c;
+    return( wgetch(cw) );
 }
-
-# ifdef BSD41
-/*
- * unctrl:
- *	Print a readable version of a certain character
- */
-
-char *
-unctrl(ch)
-char ch;
-{
-    extern char *_unctrl[];		/* Defined in curses library */
-
-    return _unctrl[ch&0177];
-}
-# endif
 
 /*
  * status:
@@ -198,7 +165,7 @@ status()
     mvwaddstr(cw, LINES - 1, 0, buf);
     switch (hungry_state)
     {
-	when 0: ;
+	case 0: ;
 	when 1:
 	    waddstr(cw, "  Hungry");
 	when 2:
@@ -245,4 +212,9 @@ char *message;
     wait_for(' ');
     clearok(cw, TRUE);
     touchwin(cw);
+}
+
+flush_type()
+{
+	flushinp();
 }

@@ -19,7 +19,6 @@ bool silent;
 {
     register struct linked_list *ip, *lp;
     register struct object *obj, *op;
-    register char ch;
     register bool exact, from_floor;
 
     if (item == NULL)
@@ -350,7 +349,7 @@ int type;
 	    /*
 	     * Give the poor player a chance to abort the command
 	     */
-	    if (ch == ESCAPE || ch == CTRL(G))
+	    if (ch == ESCAPE || ch == CTRL('G'))
 	    {
 		after = FALSE;
 		msg("");

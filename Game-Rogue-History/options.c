@@ -7,6 +7,7 @@
  */
 
 #include "curses.h"
+#include <termios.h>
 #include <ctype.h>
 #include "rogue.h"
 
@@ -186,7 +187,7 @@ WINDOW *win;
     {
 	if (c == -1)
 	    continue;
-	else if (c == _tty.sg_erase)	/* process erase character */
+	else if (c == terminal.c_cc[VERASE])	/* process erase character */
 	{
 	    if (sp > buf)
 	    {
@@ -198,7 +199,7 @@ WINDOW *win;
 	    }
 	    continue;
 	}
-	else if (c == _tty.sg_kill)	/* process kill character */
+	else if (c == terminal.c_cc[VKILL])	/* process kill character */
 	{
 	    sp = buf;
 	    wmove(win, oy, ox);
@@ -321,8 +322,9 @@ register int len;
 
     while (len--)
     {
-	strcpy(s1, (sp = unctrl(*s2++)));
+	strcpy(s1, (sp = unctrl(*s2)));
 	s1 += strlen(sp);
+	s2++;
     }
     *s1 = '\0';
 }

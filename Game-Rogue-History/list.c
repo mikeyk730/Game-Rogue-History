@@ -4,7 +4,9 @@
  * @(#)list.c	3.3 (Berkeley) 6/15/81
  */
 
+#include <unistd.h>
 #include "curses.h"
+#include <stdlib.h>
 #include "rogue.h"
 
 /*
@@ -93,6 +95,7 @@ int size;
     if ((item->l_data = new(size)) == NULL)
 	msg("Ran out of memory for data after %d items", total);
     item->l_next = item->l_prev = NULL;
+    memset(item->l_data,0,size);
     return item;
 }
 
@@ -103,7 +106,10 @@ int size;
     register char *space = ALLOC(size);
 
     if (space == NULL)
-	fatal(sprintf(prbuf, "Rogue ran out of memory (%d).  Fatal error!", sbrk(0)));
+    {
+	sprintf(prbuf, "Rogue ran out of memory (%d).  Fatal error!", sbrk(0));
+        fatal(prbuf);
+    }
     total++;
     return space;
 }

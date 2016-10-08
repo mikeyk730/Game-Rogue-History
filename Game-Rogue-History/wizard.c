@@ -7,6 +7,7 @@
  */
 
 #include "curses.h"
+#include <termios.h>
 #include <ctype.h>
 #include "rogue.h"
 
@@ -25,18 +26,18 @@ whatis()
     obj = (struct object *) ldata(item);
     switch (obj->o_type)
     {
-        when SCROLL:
+        case SCROLL:
 	    s_know[obj->o_which] = TRUE;
 	    if (s_guess[obj->o_which])
 	    {
-		cfree(s_guess[obj->o_which]);
+		free(s_guess[obj->o_which]);
 		s_guess[obj->o_which] = NULL;
 	    }
         when POTION:
 	    p_know[obj->o_which] = TRUE;
 	    if (p_guess[obj->o_which])
 	    {
-		cfree(p_guess[obj->o_which]);
+		free(p_guess[obj->o_which]);
 		p_guess[obj->o_which] = NULL;
 	    }
 	when STICK:
@@ -44,7 +45,7 @@ whatis()
 	    obj->o_flags |= ISKNOW;
 	    if (ws_guess[obj->o_which])
 	    {
-		cfree(ws_guess[obj->o_which]);
+		free(ws_guess[obj->o_which]);
 		ws_guess[obj->o_which] = NULL;
 	    }
         when WEAPON:
@@ -55,7 +56,7 @@ whatis()
 	    obj->o_flags |= ISKNOW;
 	    if (r_guess[obj->o_which])
 	    {
-		cfree(r_guess[obj->o_which]);
+		free(r_guess[obj->o_which]);
 		r_guess[obj->o_which] = NULL;
 	    }
     }
@@ -157,8 +158,7 @@ teleport()
     }
     count = 0;
     running = FALSE;
-    raw();		/* flush typeahead */
-    noraw();
+    flush_type();		/* flush typeahead */
     return rm;
 }
 
@@ -170,20 +170,20 @@ teleport()
 passwd()
 {
     register char *sp, c;
-    char buf[80], *crypt();
+    char buf[80], *xcrypt();
 
     msg("Wizard's Password:");
     mpos = 0;
     sp = buf;
     while ((c = getchar()) != '\n' && c != '\r' && c != '\033')
-	if (c == _tty.sg_kill)
+	if (c == terminal.c_cc[VKILL])
 	    sp = buf;
-	else if (c == _tty.sg_erase && sp > buf)
+	else if (c == terminal.c_cc[VERASE] && sp > buf)
 	    sp--;
 	else
 	    *sp++ = c;
     if (sp == buf)
 	return FALSE;
     *sp = '\0';
-    return (!strcmp(PASSWD, crypt(buf, "mT")) != 0);
+    return (strcmp(PASSWD, xcrypt(buf, "mT")) == 0);
 }

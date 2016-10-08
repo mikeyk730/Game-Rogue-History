@@ -6,6 +6,7 @@
  */
 
 #include "curses.h"
+#include <stdlib.h>
 #include <ctype.h>
 #include "rogue.h"
 
@@ -39,7 +40,7 @@ read_scroll()
 	cur_weapon = NULL;
     switch(obj->o_which)
     {
-	when S_CONFUSE:
+	case S_CONFUSE:
 	    /*
 	     * Scroll of monster confusion.  Give him that power.
 	     */
@@ -162,7 +163,8 @@ read_scroll()
 		    switch (nch = ch = mvwinch(hw, i, j))
 		    {
 			case SECRETDOOR:
-			    mvaddch(i, j, nch = DOOR);
+                            nch = DOOR;
+			    mvaddch(i, j, nch);
 			case '-':
 			case '|':
 			case DOOR:
@@ -280,7 +282,7 @@ read_scroll()
     status();
     if (s_know[obj->o_which] && s_guess[obj->o_which])
     {
-	cfree(s_guess[obj->o_which]);
+	free(s_guess[obj->o_which]);
 	s_guess[obj->o_which] = NULL;
     }
     else if (!s_know[obj->o_which] && askme && s_guess[obj->o_which] == NULL)

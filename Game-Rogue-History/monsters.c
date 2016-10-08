@@ -11,8 +11,8 @@
 /*
  * List of monsters in rough order of vorpalness
  */
-static char *lvl_mons =  "KJBSHEAOZGLCRQNYTWFIXUMVDP";
-static char *wand_mons = "KJBSH AOZG CRQ Y W IXU V  ";
+char lvl_mons[27] =  "KJBSHEAOZGLCRQNYTWFIXUMVDP";
+char wand_mons[27] = "KJBSH AOZG CRQ Y W IXU V  ";
 
 /*
  * randmonster:
@@ -61,7 +61,7 @@ register coord *cp;
     tp->t_stats.s_hpt = roll(mp->m_stats.s_lvl, 8);
     tp->t_stats.s_lvl = mp->m_stats.s_lvl;
     tp->t_stats.s_arm = mp->m_stats.s_arm;
-    tp->t_stats.s_dmg = mp->m_stats.s_dmg;
+    strcpy(tp->t_stats.s_dmg,mp->m_stats.s_dmg);
     tp->t_stats.s_exp = mp->m_stats.s_exp;
     tp->t_stats.s_str.st_str = 10;
     tp->t_flags = mp->m_flags;
@@ -78,7 +78,7 @@ register coord *cp;
 	else
 	    switch (rnd(level > 25 ? 9 : 8))
 	    {
-		when 0: mch = GOLD;
+		case 0: mch = GOLD;
 		when 1: mch = POTION;
 		when 2: mch = SCROLL;
 		when 3: mch = STAIRS;
@@ -215,7 +215,7 @@ genocide()
 	mp = (struct thing *) ldata(ip);
 	nip = next(ip);
 	if (mp->t_type == c)
-	    remove(&mp->t_pos, ip);
+	    remove_monster(&mp->t_pos, ip);
     }
     for (i = 0; i < 26; i++)
 	if (lvl_mons[i] == c)

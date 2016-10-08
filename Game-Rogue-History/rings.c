@@ -1,4 +1,5 @@
 #include "curses.h"
+#include <stdlib.h>
 #include "rogue.h"
 
 /*
@@ -6,8 +7,6 @@
  *
  * @(#)rings.c	3.17 (Berkeley) 6/15/81
  */
-
-char *malloc();
 
 ring_on()
 {
@@ -80,7 +79,7 @@ ring_on()
     status();
     if (r_know[obj->o_which] && r_guess[obj->o_which])
     {
-	cfree(r_guess[obj->o_which]);
+	free(r_guess[obj->o_which]);
 	r_guess[obj->o_which] = NULL;
     }
     else if (!r_know[obj->o_which] && askme && r_guess[obj->o_which] == NULL)
@@ -187,7 +186,7 @@ register struct object *obj;
 	return "";
     switch (obj->o_which)
     {
-	when R_PROTECT:
+	case R_PROTECT:
 	case R_ADDSTR:
 	case R_ADDDAM:
 	case R_ADDHIT:

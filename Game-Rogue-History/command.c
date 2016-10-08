@@ -2,14 +2,10 @@
  * Read and execute the user commands
  *
  * @(#)command.c	3.45 (Berkeley) 6/15/81
- *
- * HISTORY
- * 08-Mar-87  Michael Mauldin (mlm) at Carnegie-Mellon University
- *	Added preprocessor variable BSD41.  If defined, unctrl() is
- *	declared as a function.
  */
 
-#include <curses.h>
+#include "curses.h"
+#include <stdlib.h>
 #include <ctype.h>
 #include <signal.h>
 #include "rogue.h"
@@ -19,14 +15,12 @@
  *	Process the user commands
  */
 
+char countch = FALSE, direction = FALSE, newcount = FALSE;
+
 command()
 {
     register char ch;
     register int ntimes = 1;			/* Number of player moves */
-    static char countch, direction, newcount = FALSE;
-# ifdef BSD41
-    char *unctrl();
-# endif
 
     if (on(player, ISHASTE)) ntimes++;
     /*
@@ -102,7 +96,7 @@ command()
 	    }
 	    switch (ch)
 	    {
-		when 'f':
+		case 'f':
 		    if (!on(player, ISBLIND))
 		    {
 			door_stop = TRUE;
@@ -128,7 +122,7 @@ command()
 		count--;
 	    switch (ch)
 	    {
-		when '!' : shell();
+		case '!' : shell();
 		when 'h' : do_move(0, -1);
 		when 'j' : do_move(1, 0);
 		when 'k' : do_move(-1, 0);
@@ -150,7 +144,7 @@ command()
 			after = FALSE;
 		    else
 			missile(delta.y, delta.x);
-		when 'Q' : after = FALSE; quit();
+		when 'Q' : after = FALSE; quit(-1);
 		when 'i' : after = FALSE; inventory(pack, 0);
 		when 'I' : after = FALSE; picky_inven();
 		when 'd' : drop();
@@ -176,8 +170,8 @@ command()
 		    else
 			after = FALSE;
 		when 'v' : msg("Rogue version %s. (mctesq was here)", release);
-		when CTRL(L) : after = FALSE; clearok(curscr,TRUE);draw(curscr);
-		when CTRL(R) : after = FALSE; msg(huh);
+		when CTRL('L') : after = FALSE; clearok(curscr,TRUE);draw(curscr);
+		when CTRL('R') : after = FALSE; msg(huh);
 		when 'S' : 
 		    after = FALSE;
 		    if (save_game())
@@ -189,7 +183,7 @@ command()
 			exit(0);
 		    }
 		when ' ' : ;			/* Rest command */
-		when CTRL(P) :
+		when CTRL('P') :
 		    after = FALSE;
 		    if (wizard)
 		    {
@@ -201,6 +195,7 @@ command()
 			if (wizard = passwd())
 			{
 			    msg("You are suddenly as smart as Ken Arnold in dungeon #%d", dnum);
+ 			    wizard = TRUE;
 			    waswizard = TRUE;
 			}
 			else
@@ -214,26 +209,26 @@ command()
 		    after = FALSE;
 		    if (wizard) switch (ch)
 		    {
-			when '@' : msg("@ %d,%d", hero.y, hero.x);
+			case '@' : msg("@ %d,%d", hero.y, hero.x);
 			when 'C' : create_obj();
-			when CTRL(I) : inventory(lvl_obj, 0);
-			when CTRL(W) : whatis();
-			when CTRL(D) : level++; new_level();
-			when CTRL(U) : level--; new_level();
-			when CTRL(F) : show_win(stdscr, "--More (level map)--");
-			when CTRL(X) : show_win(mw, "--More (monsters)--");
-			when CTRL(T) : teleport();
-			when CTRL(E) : msg("food left: %d", food_left);
-			when CTRL(A) : msg("%d things in your pack", inpack);
-			when CTRL(C) : add_pass();
-			when CTRL(N) :
+			when CTRL('I') : inventory(lvl_obj, 0);
+			when CTRL('W') : whatis();
+			when CTRL('D') : level++; new_level();
+			when CTRL('U') : level--; new_level();
+			when CTRL('F') : show_win(stdscr, "--More (level map)--");
+			when CTRL('X') : show_win(mw, "--More (monsters)--");
+			when CTRL('T') : teleport();
+			when CTRL('E') : msg("food left: %d", food_left);
+			when CTRL('A') : msg("%d things in your pack", inpack);
+			when CTRL('C') : add_pass();
+			when CTRL('N') :
 			{
 			    register struct linked_list *item;
 
 			    if ((item = get_item("charge", STICK)) != NULL)
 				((struct object *) ldata(item))->o_charges = 10000;
 			}
-			when CTRL(H) :
+			when CTRL('H') :
 			{
 			    register int i;
 			    register struct linked_list *item;
@@ -313,7 +308,8 @@ command()
  *	Have player make certain, then exit.
  */
 
-quit()
+void
+quit(int p)
 {
     /*
      * Reset the signal in case we got here via an interrupt
@@ -351,7 +347,6 @@ search()
 {
     register int x, y;
     register char ch;
-    register int i;
 
     /*
      * Look all around the hero, if there is something hidden there,
@@ -570,8 +565,6 @@ shell()
     }
     else
     {
-	int endit();
-
 	signal(SIGINT, SIG_IGN);
 	signal(SIGQUIT, SIG_IGN);
 	while (wait(&ret_status) != pid)
@@ -597,7 +590,6 @@ call()
     register struct linked_list *item;
     register char **guess, *elsewise;
     register bool *know;
-    char *malloc();
 
     item = get_item("call", CALLABLE);
     /*
@@ -608,7 +600,7 @@ call()
     obj = (struct object *) ldata(item);
     switch (obj->o_type)
     {
-	when RING:
+	case RING:
 	    guess = r_guess;
 	    know = r_know;
 	    elsewise = (r_guess[obj->o_which] != NULL ?
@@ -647,7 +639,7 @@ call()
     else
 	msg("What do you want to call it? ");
     if (guess[obj->o_which] != NULL)
-	cfree(guess[obj->o_which]);
+	free(guess[obj->o_which]);
     strcpy(prbuf, elsewise);
     if (get_str(prbuf, cw) == NORM)
     {

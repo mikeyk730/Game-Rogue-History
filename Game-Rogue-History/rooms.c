@@ -1,6 +1,3 @@
-
-/* Aw01 11-22-81 Correct computation of maximum room size */
-
 /*
  * Draw the nine rooms on the screen
  *
@@ -24,9 +21,8 @@ do_rooms()
     /*
      * bsze is the maximum room size
      */
-    bsze.x = (COLS-2)/3;	/* Aw01 Allow for passages and mode lines */
-    bsze.y = (LINES-4)/3;	/* Aw01 */
-
+    bsze.x = COLS/3;
+    bsze.y = LINES/3;
     /*
      * Clear things for a new level
      */
@@ -46,8 +42,8 @@ do_rooms()
 	/*
 	 * Find upper left corner of box that this room goes in
 	 */
-	top.x = (i%3)*(bsze.x+1);
-	top.y = i/3*(bsze.y+1) + 1;
+	top.x = (i%3)*bsze.x + 1;
+	top.y = i/3*bsze.y;
 	if (rp->r_flags & ISGONE)
 	{
 	    /*
@@ -59,7 +55,7 @@ do_rooms()
 		rp->r_pos.x = top.x + rnd(bsze.x-2) + 1;
 		rp->r_pos.y = top.y + rnd(bsze.y-2) + 1;
 		rp->r_max.x = -COLS;
-		rp->r_max.y = -LINES + 1;	/* Aw01 fix a type x=>y */
+		rp->r_max.x = -LINES;
 	    } until(rp->r_pos.y > 0 && rp->r_pos.y < LINES-1);
 	    continue;
 	}
@@ -68,10 +64,13 @@ do_rooms()
 	/*
 	 * Find a place and size for a random room
 	 */
-	 rp->r_max.x = rnd(bsze.x - 3) + 4;
-	 rp->r_max.y = rnd(bsze.y - 3) + 4;
-	 rp->r_pos.x = top.x + rnd(bsze.x + 1 - rp->r_max.x);
-	 rp->r_pos.y = top.y + rnd(bsze.y + 1 - rp->r_max.y);
+	do
+	{
+	    rp->r_max.x = rnd(bsze.x - 4) + 4;
+	    rp->r_max.y = rnd(bsze.y - 4) + 4;
+	    rp->r_pos.x = top.x + rnd(bsze.x - rp->r_max.x);
+	    rp->r_pos.y = top.y + rnd(bsze.y - rp->r_max.y);
+	} until (rp->r_pos.y != 0);
 	/*
 	 * Put the gold in
 	 */

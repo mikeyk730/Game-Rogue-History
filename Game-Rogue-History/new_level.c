@@ -1,4 +1,3 @@
-/* 11-23-81 Aw01 Try different rooms when trying to find some FLOOR */
 #include "curses.h"
 #include "rogue.h"
 
@@ -55,7 +54,7 @@ new_level()
 	    } until (winat(stairs.y, stairs.x) == FLOOR);
 	    switch(rnd(6))
 	    {
-		when 0: ch = TRAPDOOR;
+		case 0: ch = TRAPDOOR;
 		when 1: ch = BEARTRAP;
 		when 2: ch = SLEEPTRAP;
 		when 3: ch = ARROWTRAP;
@@ -132,8 +131,8 @@ put_things()
 	    /*
 	     * Put it somewhere
 	     */
+	    rm = rnd_room();
 	    do {
-	        rm = rnd_room();		/* Aw01 Try differnt rooms */
 		rnd_pos(&rooms[rm], &tp);
 	    } until (winat(tp.y, tp.x) == FLOOR);
 	    mvaddch(tp.y, tp.x, cur->o_type);
@@ -149,14 +148,15 @@ put_things()
 	attach(lvl_obj, item);
 	cur = (struct object *) ldata(item);
 	cur->o_hplus = cur->o_dplus = 0;
-	cur->o_damage = cur->o_hurldmg = "0d0";
+	strcpy(cur->o_damage,"0d0");
+        strcpy(cur->o_hurldmg, "0d0");
 	cur->o_ac = 11;
 	cur->o_type = AMULET;
 	/*
 	 * Put it somewhere
 	 */
+	rm = rnd_room();
 	do {
-	    rm = rnd_room();		/* Aw01 Try different rooms */
 	    rnd_pos(&rooms[rm], &tp);
 	} until (winat(tp.y, tp.x) == FLOOR);
 	mvaddch(tp.y, tp.x, cur->o_type);

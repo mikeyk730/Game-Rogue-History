@@ -1,5 +1,3 @@
-/* DBM	2/12/82	Got rid of bogus arrow bug. */
-
 /*
  * Hero movement commands
  *
@@ -177,7 +175,7 @@ coord *cp;
 		    rch = mvwinch(cw, rp->r_pos.y+j, rp->r_pos.x+k);
 		    switch (rch)
 		    {
-			when DOOR:
+			case DOOR:
 			case STAIRS:
 			case TRAP:
 			case '|':
@@ -243,7 +241,7 @@ register coord *tc;
     tp->tr_flags |= ISFOUND;
     switch (ch = tp->tr_type)
     {
-	when TRAPDOOR:
+	case TRAPDOOR:
 	    level++;
 	    new_level();
 	    msg("You fell into a trap!");
@@ -276,8 +274,8 @@ register coord *tc;
 		init_weapon(arrow, ARROW);
 		arrow->o_count = 1;
 		arrow->o_pos = hero;
-		arrow->o_hplus = 0;		/* DBM: Get rid of bogus */
-		arrow->o_dplus = 0;		/* DBM: arrows. */
+		arrow->o_hplus = 0;
+		arrow->o_dplus = 0;
 		fall(item, FALSE);
 	    }
 	when TELTRAP:
@@ -297,8 +295,7 @@ register coord *tc;
 	    else
 		msg("A small dart whizzes by your ear and vanishes.");
     }
-    raw();	/* flush typeahead */
-    noraw();
+    flush_type();	/* flush typeahead */
     return(ch);
 }
 
@@ -318,7 +315,10 @@ register int y, x;
 	if (tp->tr_pos.y == y && tp->tr_pos.x == x)
 	    break;
     if (tp == ep)
-	debug(sprintf(prbuf, "Trap at %d,%d not in array", y, x));
+    {
+	sprintf(prbuf, "Trap at %d,%d not in array", y, x);
+	debug(prbuf);
+    }
     return tp;
 }
 

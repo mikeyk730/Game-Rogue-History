@@ -11,6 +11,7 @@
 #include <ctype.h>
 #include <sys/types.h>
 #include <pwd.h>
+#include <fcntl.h>
 #include "machdep.h"
 #include "rogue.h"
 
@@ -60,7 +61,8 @@ register char monst;
     killer = killname(monst);
     mvaddstr(17, 28-((strlen(killer)+1)/2), killer);
     mvaddstr(16, 33, vowelstr(killer));
-    mvaddstr(18, 28, sprintf(prbuf, "%2d", lt->tm_year));
+    sprintf(prbuf, "%4d", 1900+lt->tm_year);
+    mvaddstr(18, 26, prbuf);
     move(LINES-1, 0);
     draw(stdscr);
     score(purse, 0, monst);
@@ -96,7 +98,6 @@ char monst;
 	"quit",
 	"A total winner",
     };
-    int	endit();
 
     if (flags != -1)
 	endwin();
@@ -104,11 +105,11 @@ char monst;
      * Open file and read list
      */
 
-    if ((fd = open(SCOREFILE, 2)) < 0)
+    if ((fd = open(SCOREFILE, O_RDWR | O_CREAT, 0666 )) < 0)
 	return;
-    outf = fdopen(fd, "w");
+    outf = (FILE *) fdopen(fd, "w");
 
-    for (scp = top_ten; scp < &top_ten[10]; scp++)
+    for (scp = top_ten; scp <= &top_ten[9]; scp++)
     {
 	scp->sc_score = 0;
 	for (i = 0; i < 80; i++)
@@ -124,7 +125,7 @@ char monst;
     {
 	printf("[Press return to continue]");
 	fflush(stdout);
-	gets(prbuf);
+	fgets(prbuf,80,stdin);
     }
     if (wizard)
 	if (strcmp(prbuf, "names") == 0)
@@ -137,10 +138,10 @@ char monst;
      */
     if (!waswizard)
     {
-	for (scp = top_ten; scp < &top_ten[10]; scp++)
+	for (scp = top_ten; scp <= &top_ten[9]; scp++)
 	    if (amount > scp->sc_score)
 		break;
-	if (scp < &top_ten[10])
+	if (scp <= &top_ten[9])
 	{
 	    for (sc2 = &top_ten[9]; sc2 > scp; sc2--)
 		*sc2 = *(sc2-1);
@@ -159,7 +160,7 @@ char monst;
      * Print the list
      */
     printf("\nTop Ten Adventurers:\nRank\tScore\tName\n");
-    for (scp = top_ten; scp < &top_ten[10]; scp++) {
+    for (scp = top_ten; scp <= &top_ten[9]; scp++) {
 	if (scp->sc_score) {
 	    printf("%d\t%d\t%s: %s on level %d", scp - top_ten + 1,
 		scp->sc_score, scp->sc_name, reason[scp->sc_flags],
@@ -185,7 +186,7 @@ char monst;
 	    else if (prflags == 2)
 	    {
 		fflush(stdout);
-		gets(prbuf);
+		fgets(prbuf,80,stdin);
 		if (prbuf[0] == 'd')
 		{
 		    for (sc2 = scp; sc2 < &top_ten[9]; sc2++)
@@ -246,12 +247,12 @@ total_winner()
 	obj = (struct object *) ldata(item);
 	switch (obj->o_type)
 	{
-	    when FOOD:
+	    case FOOD:
 		worth = 2 * obj->o_count;
 	    when WEAPON:
 		switch (obj->o_which)
 		{
-		    when MACE: worth = 8;
+		    case MACE: worth = 8;
 		    when SWORD: worth = 15;
 		    when BOW: worth = 75;
 		    when ARROW: worth = 1;
@@ -271,7 +272,7 @@ total_winner()
 	    when ARMOR:
 		switch (obj->o_which)
 		{
-		    when LEATHER: worth = 5;
+		    case LEATHER: worth = 5;
 		    when RING_MAIL: worth = 30;
 		    when STUDDED_LEATHER: worth = 15;
 		    when SCALE_MAIL: worth = 3;
@@ -314,7 +315,7 @@ total_winner()
     }
     mvprintw(c - 'a' + 1, 0,"   %5d  Gold Peices          ", oldpurse);
     refresh();
-    score(purse, 2);
+    score(purse, 2, 0);
     exit(0);
 }
 
@@ -334,4 +335,5 @@ register char monst;
 	    case 'b':
 		return "bolt";
 	}
+    return("");
 }

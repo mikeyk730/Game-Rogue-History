@@ -21,7 +21,7 @@ char ch;
 
     switch (ch)
     {
-	when TRAPDOOR:
+	case TRAPDOOR:
 	    s = terse ? "A trapdoor." : "You found a trapdoor.";
 	when BEARTRAP:
 	    s = terse ? "A beartrap." : "You found a beartrap.";
@@ -108,7 +108,7 @@ bool wakeup;
 	    {
 		switch (runch)
 		{
-		    when 'h':
+		    case 'h':
 			if (x == ex)
 			    continue;
 		    when 'j':
@@ -207,7 +207,8 @@ int x;
 	if (op->o_pos.y == y && op->o_pos.x == x)
 		return obj;
     }
-    debug(sprintf(prbuf, "Non-object %d,%d", y, x));
+    sprintf(prbuf, "Non-object %d,%d", y, x);
+    debug(prbuf);
     return NULL;
 }
 
@@ -233,11 +234,6 @@ eat()
 	return;
     }
     inpack--;
-    if (--obj->o_count < 1)
-    {
-	detach(pack, item);
-	discard(item);
-    }
     if (obj->o_which == 1)
 	msg("My, that was a yummy %s", fruit);
     else
@@ -254,6 +250,11 @@ eat()
     hungry_state = 0;
     if (obj == cur_weapon)
 	cur_weapon = NULL;
+    if (--obj->o_count < 1)
+    {
+	detach(pack, item);
+	discard(item);
+    }
 }
 
 /*
@@ -399,7 +400,7 @@ get_dir()
 	gotit = TRUE;
 	switch (readchar())
 	{
-	    when 'h': case'H': delta.y =  0; delta.x = -1;
+	    case 'h': case'H': delta.y =  0; delta.x = -1;
 	    when 'j': case'J': delta.y =  1; delta.x =  0;
 	    when 'k': case'K': delta.y = -1; delta.x =  0;
 	    when 'l': case'L': delta.y =  0; delta.x =  1;

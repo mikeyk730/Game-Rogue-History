@@ -2,14 +2,6 @@
  * Rogue definitions and variable declarations
  *
  * @(#)rogue.h	3.38 (Berkeley) 6/15/81
- *
- * HISTORY
- * 08-Mar-87  Michael Mauldin (mlm) at Carnegie-Mellon University
- *	Added preprocessor variable BSD41.  If defined, unctrl() is
- *	defined as a function.  In the new curses.h, unctrl is a macro.
- *	Also checked for multiple definitions of 'CTRL', since 
- *	<sys/ttychars.h> gets loaded in 4.2+, and defines it.
- *
  */
 
 /*
@@ -40,11 +32,12 @@
  && (cp)->y <= (rp)->r_pos.y + ((rp)->r_max.y - 1) && (rp)->r_pos.y <= (cp)->y)
 #define winat(y, x) (mvwinch(mw,y,x)==' '?mvwinch(stdscr,y,x):winch(mw))
 #define debug if (wizard) msg
-/* Aw01 use a real random number renerator */
-#define RN ((rand() & 0x7fff) >> 1)
+#define RN (((seed = seed*11109+13849) & 0x7fff) >> 1)
 #define unc(cp) (cp).y, (cp).x
 #define cmov(xy) move((xy).y, (xy).x)
 #define DISTANCE(y1, x1, y2, x2) ((x2 - x1)*(x2 - x1) + (y2 - y1)*(y2 - y1))
+#define OBJPTR(what)    (struct object *)((*what).l_data)
+#define THINGPTR(what)  (struct thing *)((*what).l_data)
 #define when break;case
 #define otherwise break;default
 #define until(expr) while(!(expr))
@@ -56,15 +49,15 @@
 #define attach(a,b) _attach(&a,b)
 #define detach(a,b) _detach(&a,b)
 #define free_list(a) _free_list(&a)
+#ifndef max
 #define max(a, b) ((a) > (b) ? (a) : (b))
+#endif
 #define on(thing, flag) (((thing).t_flags & flag) != 0)
 #define off(thing, flag) (((thing).t_flags & flag) == 0)
-# ifdef CTRL
-#	undef CTRL
-# endif
-#define CTRL(ch) ('ch' & 037)
+#undef  CTRL
+#define CTRL(ch) (ch & 037)
 #define ALLOC(x) malloc((unsigned int) x)
-#define FREE(x) cfree((char *) x)
+#define FREE(x) free((char *) x)
 #define	EQSTR(a, b, c)	(strncmp(a, b, c) == 0)
 #define GOLDCALC (rnd(50 + 10 * level) + 2)
 #define ISRING(h,r) (cur_ring[h] != NULL && cur_ring[h]->o_which == r)
@@ -277,7 +270,9 @@
 struct h_list {
     char h_ch;
     char *h_desc;
-} helpstr[];
+};
+
+extern struct h_list helpstr[];
 
 /*
  * Coordinate data type
@@ -306,7 +301,7 @@ struct linked_list {
  */
 
 struct magic_item {
-    char *mi_name;
+    char mi_name[30];
     int mi_prob;
     int mi_worth;
 };
@@ -331,7 +326,9 @@ struct trap {
     coord tr_pos;			/* Where trap is */
     char tr_type;			/* What kind of trap */
     int tr_flags;			/* Info about trap (i.e. ISFOUND) */
-} traps[MAXTRAPS];
+};
+
+extern struct trap  traps[MAXTRAPS];
 
 /*
  * Structure describing a fighting being
@@ -342,7 +339,7 @@ struct stats {
     int s_lvl;				/* Level of mastery */
     int s_arm;				/* Armor class */
     int s_hpt;				/* Hit points */
-    char *s_dmg;			/* String describing damage done */
+    char s_dmg[30];			/* String describing damage done */
 };
 
 /*
@@ -358,13 +355,14 @@ struct thing {
     short t_flags;			/* State word */
     struct stats t_stats;		/* Physical description */
     struct linked_list *t_pack;		/* What the thing is carrying */
+	int t_reserved;         /* reserved for save/restore code */
 };
 
 /*
  * Array containing information on all the various types of mosnters
  */
 struct monster {
-    char *m_name;			/* What to call the monster */
+    char m_name[20];			/* What to call the monster */
     short m_carry;			/* Probability of carrying something */
     short m_flags;			/* Things about the monster */
     struct stats m_stats;		/* Initial stats */
@@ -377,10 +375,9 @@ struct monster {
 struct object {
     int o_type;				/* What kind of object it is */
     coord o_pos;			/* Where it lives on the screen */
-    char *o_text;			/* What it says if you read it */
     char o_launch;			/* What you need to launch it */
-    char *o_damage;			/* Damage if used like sword */
-    char *o_hurldmg;			/* Damage if thrown */
+    char o_damage[8];			/* Damage if used like sword */
+    char o_hurldmg[8];			/* Damage if thrown */
     int o_count;			/* Count for plural objects */
     int o_which;			/* Which object of a type it is */
     int o_hplus;			/* Plusses to hit */
@@ -390,120 +387,137 @@ struct object {
     int o_group;			/* Group number for this object */
 };
 
+struct words {
+    char w_string[30];
+};
+
 /*
  * Now all the global variables
  */
 
-struct room rooms[MAXROOMS];		/* One for each room -- A level */
-struct room *oldrp;			/* Roomin(&oldpos) */
-struct linked_list *mlist;		/* List of monsters on the level */
-struct thing player;			/* The rogue */
-struct stats max_stats;			/* The maximum for the player */
-struct monster monsters[26];		/* The initial monster states */
-struct linked_list *lvl_obj;		/* List of objects on this level */
-struct object *cur_weapon;		/* Which weapon he is weilding */
-struct object *cur_armor;		/* What a well dresssed rogue wears */
-struct object *cur_ring[2];		/* Which rings are being worn */
-struct magic_item things[NUMTHINGS];	/* Chances for each type of item */
-struct magic_item s_magic[MAXSCROLLS];	/* Names and chances for scrolls */
-struct magic_item p_magic[MAXPOTIONS];	/* Names and chances for potions */
-struct magic_item r_magic[MAXRINGS];	/* Names and chances for rings */
-struct magic_item ws_magic[MAXSTICKS];	/* Names and chances for sticks */
+extern struct room rooms[MAXROOMS];		/* One for each room -- A level */
+extern struct room *oldrp;			/* Roomin(&oldpos) */
+extern struct linked_list *mlist;		/* List of monsters on the level */
+extern struct thing player;			/* The rogue */
+extern struct stats max_stats;			/* The maximum for the player */
+extern struct monster monsters[26];		/* The initial monster states */
+extern struct linked_list *lvl_obj;		/* List of objects on this level */
+extern struct object *cur_weapon;		/* Which weapon he is weilding */
+extern struct object *cur_armor;		/* What a well dresssed rogue wears */
+extern struct object *cur_ring[2];		/* Which rings are being worn */
+extern struct magic_item things[NUMTHINGS];	/* Chances for each type of item */
+extern struct magic_item s_magic[MAXSCROLLS];	/* Names and chances for scrolls */
+extern struct magic_item p_magic[MAXPOTIONS];	/* Names and chances for potions */
+extern struct magic_item r_magic[MAXRINGS];	/* Names and chances for rings */
+extern struct magic_item ws_magic[MAXSTICKS];	/* Names and chances for sticks */
 
-int level;				/* What level rogue is on */
-int purse;				/* How much gold the rogue has */
-int mpos;				/* Where cursor is on top line */
-int ntraps;				/* Number of traps on this level */
-int no_move;				/* Number of turns held in place */
-int no_command;				/* Number of turns asleep */
-int inpack;				/* Number of things in pack */
-int max_hp;				/* Player's max hit points */
-int total;				/* Total dynamic memory bytes */
-int a_chances[MAXARMORS];		/* Probabilities for armor */
-int a_class[MAXARMORS];			/* Armor class for various armors */
-int lastscore;				/* Score before this turn */
-int no_food;				/* Number of levels without food */
-int seed;				/* Random number seed */
-int count;				/* Number of times to repeat command */
-int dnum;				/* Dungeon number */
-int fung_hit;				/* Number of time fungi has hit */
-int quiet;				/* Number of quiet turns */
-int max_level;				/* Deepest player has gone */
-int food_left;				/* Amount of food in hero's stomach */
-int group;				/* Current group number */
-int hungry_state;			/* How hungry is he */
+extern int level;				/* What level rogue is on */
+extern int purse;				/* How much gold the rogue has */
+extern int mpos;				/* Where cursor is on top line */
+extern int ntraps;				/* Number of traps on this level */
+extern int no_move;				/* Number of turns held in place */
+extern int no_command;				/* Number of turns asleep */
+extern int inpack;				/* Number of things in pack */
+extern int max_hp;				/* Player's max hit points */
+extern int total;				/* Total dynamic memory bytes */
+extern int a_chances[MAXARMORS];		/* Probabilities for armor */
+extern int a_class[MAXARMORS];			/* Armor class for various armors */
+extern int lastscore;				/* Score before this turn */
+extern int no_food;				/* Number of levels without food */
+extern int seed;				/* Random number seed */
+extern int count;				/* Number of times to repeat command */
+extern int dnum;				/* Dungeon number */
+extern int fung_hit;				/* Number of time fungi has hit */
+extern int quiet;				/* Number of quiet turns */
+extern int max_level;				/* Deepest player has gone */
+extern int food_left;				/* Amount of food in hero's stomach */
+extern int group;				/* Current group number */
+extern int hungry_state;			/* How hungry is he */
 
-char take;				/* Thing the rogue is taking */
-char prbuf[80];				/* Buffer for sprintfs */
-char outbuf[BUFSIZ];			/* Output buffer for stdout */
-char runch;				/* Direction player is running */
-char *s_names[MAXSCROLLS];		/* Names of the scrolls */
-char *p_colors[MAXPOTIONS];		/* Colors of the potions */
-char *r_stones[MAXRINGS];		/* Stone settings of the rings */
-char *w_names[MAXWEAPONS];		/* Names of the various weapons */
-char *a_names[MAXARMORS];		/* Names of armor types */
-char *ws_made[MAXSTICKS];		/* What sticks are made of */
-char *release;				/* Release number of rogue */
-char whoami[80];			/* Name of player */
-char fruit[80];				/* Favorite fruit */
-char huh[80];				/* The last message printed */
-char *s_guess[MAXSCROLLS];		/* Players guess at what scroll is */
-char *p_guess[MAXPOTIONS];		/* Players guess at what potion is */
-char *r_guess[MAXRINGS];		/* Players guess at what ring is */
-char *ws_guess[MAXSTICKS];		/* Players guess at what wand is */
-char *ws_type[MAXSTICKS];		/* Is it a wand or a staff */
-char file_name[80];			/* Save file name */
-char home[80];				/* User's home directory */
+extern char take;				/* Thing the rogue is taking */
+extern char prbuf[80];				/* Buffer for sprintfs */
+extern char outbuf[BUFSIZ];			/* Output buffer for stdout */
+extern char runch;				/* Direction player is running */
+extern char *s_names[MAXSCROLLS];		/* Names of the scrolls */
+extern char *p_colors[MAXPOTIONS];		/* Colors of the potions */
+extern char *r_stones[MAXRINGS];		/* Stone settings of the rings */
+extern char *w_names[MAXWEAPONS];		/* Names of the various weapons */
+extern char *a_names[MAXARMORS];		/* Names of armor types */
+extern char *ws_made[MAXSTICKS];		/* What sticks are made of */
+extern char *release;				/* Release number of rogue */
+extern char whoami[80];			/* Name of player */
+extern char fruit[80];				/* Favorite fruit */
+extern char huh[80];				/* The last message printed */
+extern char *s_guess[MAXSCROLLS];		/* Players guess at what scroll is */
+extern char *p_guess[MAXPOTIONS];		/* Players guess at what potion is */
+extern char *r_guess[MAXRINGS];		/* Players guess at what ring is */
+extern char *ws_guess[MAXSTICKS];		/* Players guess at what wand is */
+extern char *ws_type[MAXSTICKS];		/* Is it a wand or a staff */
+extern char file_name[80];			/* Save file name */
+extern char home[80];				/* User's home directory */
 
-WINDOW *cw;				/* Window that the player sees */
-WINDOW *hw;				/* Used for the help command */
-WINDOW *mw;				/* Used to store mosnters */
+extern WINDOW *cw;				/* Window that the player sees */
+extern WINDOW *hw;				/* Used for the help command */
+extern WINDOW *mw;				/* Used to store mosnters */
 
-bool running;				/* True if player is running */
-bool playing;				/* True until he quits */
-bool wizard;				/* True if allows wizard commands */
-bool after;				/* True if we want after daemons */
-bool notify;				/* True if player wants to know */
-bool fight_flush;			/* True if toilet input */
-bool terse;				/* True if we should be short */
-bool door_stop;				/* Stop running when we pass a door */
-bool jump;				/* Show running as series of jumps */
-bool slow_invent;			/* Inventory one line at a time */
-bool firstmove;				/* First move after setting door_stop */
-bool waswizard;				/* Was a wizard sometime */
-bool askme;				/* Ask about unidentified things */
-bool s_know[MAXSCROLLS];		/* Does he know what a scroll does */
-bool p_know[MAXPOTIONS];		/* Does he know what a potion does */
-bool r_know[MAXRINGS];			/* Does he know what a ring does */
-bool ws_know[MAXSTICKS];		/* Does he know what a stick does */
-bool amulet;				/* He found the amulet */
-bool in_shell;				/* True if executing a shell */
+extern bool running;				/* True if player is running */
+extern bool playing;				/* True until he quits */
+extern bool wizard;				/* True if allows wizard commands */
+extern bool after;				/* True if we want after daemons */
+extern bool notify;				/* True if player wants to know */
+extern bool fight_flush;			/* True if toilet input */
+extern bool terse;				/* True if we should be short */
+extern bool door_stop;				/* Stop running when we pass a door */
+extern bool jump;				/* Show running as series of jumps */
+extern bool slow_invent;			/* Inventory one line at a time */
+extern bool firstmove;				/* First move after setting door_stop */
+extern bool waswizard;				/* Was a wizard sometime */
+extern bool askme;				/* Ask about unidentified things */
+extern bool s_know[MAXSCROLLS];		/* Does he know what a scroll does */
+extern bool p_know[MAXPOTIONS];		/* Does he know what a potion does */
+extern bool r_know[MAXRINGS];			/* Does he know what a ring does */
+extern bool ws_know[MAXSTICKS];		/* Does he know what a stick does */
+extern bool amulet;				/* He found the amulet */
+extern bool in_shell;				/* True if executing a shell */
 
-coord oldpos;				/* Position before last look() call */
-coord delta;				/* Change indicated to get_dir() */
+extern coord oldpos;				/* Position before last look() call */
+extern coord delta;				/* Change indicated to get_dir() */
+
+extern coord ch_ret;
+extern char countch,direction,newcount;
+extern struct delayed_action d_list[20];
+extern int between;
+extern int num_checks;
+extern char lvl_mons[27],wand_mons[27];
+extern coord nh;
 
 struct linked_list *find_mons(), *find_obj(), *get_item(), *new_item();
 struct linked_list *new_thing(), *wake_monster();
 
-# ifdef BDS41
-char *unctrl();		/* Moved here 3/8/87 by mlm */
-# endif
-
-char *malloc(), *getenv(), *tr_name(), *new(), *sprintf();
-char *vowelstr(), *inv_name(), *strcpy(), *strcat(), *sbrk(), *brk();
+char *getenv(), *tr_name(), *new();
+char *charge_str(),*vowelstr(), *inv_name(), *strcpy(), *strcat();
 char *ctime(), *num(), *ring_num();
 
 struct room *roomin();
 
 coord *rndmove();
 
-int auto_save(), endit(), nohaste(), doctor(), runners(), swander();
-int tstp(), unconfuse(), unsee(), rollwand(), stomach(), sight();
-
-#ifdef CHECKTIME
-int checkout();
-#endif
-
-long lseek();
+void auto_save(), endit(), quit(), tstp(), checkout();
+int nohaste(), doctor(), runners(), swander();
+int unconfuse(), unsee(), rollwand(), stomach(), sight();
 
 struct trap *trap_at();
+
+extern struct termios terminal;
+
+#define NCOLORS 24
+#define NSYLLS  159
+#define NSTONES 20
+#define NWOOD 22
+#define NMETAL 11
+extern struct words rainbow[NCOLORS];
+extern struct words sylls[NSYLLS];
+extern struct words stones[NSTONES];
+extern struct words wood[NWOOD];
+extern struct words metal[NMETAL];
+

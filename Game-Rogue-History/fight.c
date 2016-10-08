@@ -115,7 +115,7 @@ register struct thing *mp;
 	if (off(*mp, ISCANC))
 	    switch (mp->t_type)
 	    {
-		when 'R':
+		case 'R':
 		    /*
 		     * If a rust monster hits, you lose armor
 		     */
@@ -206,7 +206,8 @@ register struct thing *mp;
 			purse = 0;
 		    if (purse != lastpurse)
 			msg("Your purse feels lighter");
-		    remove(&mp->t_pos, find_mons(mp->t_pos.y, mp->t_pos.x));
+		    remove_monster(&mp->t_pos, find_mons(mp->t_pos.y, mp->t_pos.x));
+                    mp = NULL;
 		}
 		when 'N':
 		{
@@ -231,7 +232,8 @@ register struct thing *mp;
 			register struct object *obj;
 
 			obj = (struct object *) ldata(steal);
-			remove(&mp->t_pos, find_mons(mp->t_pos.y, mp->t_pos.x));
+			remove_monster(&mp->t_pos, find_mons(mp->t_pos.y, mp->t_pos.x));
+                        mp = NULL;
 			if (obj->o_count > 1 && obj->o_group == 0)
 			{
 			    register int oc;
@@ -268,15 +270,19 @@ register struct thing *mp;
      * Check to see if this is a regenerating monster and let it heal if
      * it is.
      */
-    if (on(*mp, ISREGEN) && rnd(100) < 33)
+    if ((mp != NULL) && (on(*mp, ISREGEN) && rnd(100) < 33))
 	mp->t_stats.s_hpt++;
     if (fight_flush)
     {
-	raw();	/* flush typeahead */
-	noraw();
+	flush_type();	/* flush typeahead */
     }
     count = 0;
     status();
+
+    if (mp == NULL)
+        return(-1);
+    else
+        return(0);
 }
 
 /*
@@ -355,7 +361,7 @@ bool hurl;
 	if (weap->o_type == STICK && weap->o_which == WS_HIT
 	    && weap->o_charges == 0)
 		{
-		    weap->o_damage = "0d0";
+		    strcpy(weap->o_damage,"0d0");
 		    weap->o_hplus = weap->o_dplus = 0;
 		}
     }
@@ -454,7 +460,7 @@ register char *er, *ee;
     else
 	switch (rnd(4))
 	{
-	    when 0: s = " scored an excellent hit on ";
+	    case 0: s = " scored an excellent hit on ";
 	    when 1: s = " hit ";
 	    when 2: s = (er == 0 ? " have injured " : " has injured ");
 	    when 3: s = (er == 0 ? " swing and hit " : " swings and hits ");
@@ -478,7 +484,7 @@ register char *er, *ee;
     addmsg(prname(er, TRUE));
     switch (terse ? 0 : rnd(4))
     {
-	when 0: s = (er == 0 ? " miss" : " misses");
+	case 0: s = (er == 0 ? " miss" : " misses");
 	when 1: s = (er == 0 ? " swing and miss" : " swings and misses");
 	when 2: s = (er == 0 ? " barely miss" : " barely misses");
 	when 3: s = (er == 0 ? " don't hit" : " doesn't hit");
@@ -606,7 +612,7 @@ register char *mname;
 /*
  * remove a monster from the screen
  */
-remove(mp, item)
+remove_monster(mp, item)
 register coord *mp;
 register struct linked_list *item;
 {
@@ -675,7 +681,7 @@ bool pr;
      */
     switch (tp->t_type)
     {
-	when 'F':
+	case 'F':
 	    player.t_flags &= ~ISHELD;
 	    fung_hit = 0;
 	    strcpy(monsters['F'-'A'].m_stats.s_dmg, "000d0");
@@ -707,7 +713,7 @@ bool pr;
     /*
      * Get rid of the monster.
      */
-    remove(&tp->t_pos, item);
+    remove_monster(&tp->t_pos, item);
     while (pitem != NULL)
     {
 	register struct object *obj;

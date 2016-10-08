@@ -8,14 +8,19 @@
  */
 
 #include "curses.h"
+#include <time.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <pwd.h>
+#include <termios.h>
 #include "machdep.h"
 #include "rogue.h"
 
-#ifdef CHECKTIME
-static int num_checks;		/* times we've gone over in checkout() */
-#endif
+struct termios terminal;
+int num_checks;			/* times we've gone over in checkout() */
+WINDOW *cw;                              /* Window that the player sees */
+WINDOW *hw;                              /* Used for the help command */
+WINDOW *mw;                              /* Used to store mosnters */
 
 main(argc, argv, envp)
 char **argv;
@@ -26,9 +31,13 @@ char **envp;
     register struct linked_list *item;
     register struct object *obj;
     struct passwd *getpwuid();
-    char *getpass(), *crypt();
-    int quit(), lowtime;
-    long now;
+    char *getpass(), *xcrypt();
+    int lowtime;
+    time_t now;
+
+#ifdef __DJGPP__
+    _fmode = O_BINARY;
+#endif
 
     /*
      * check for print-score option
@@ -43,7 +52,7 @@ char **envp;
      * Check to see if he is a wizard
      */
     if (argc >= 2 && argv[1][0] == '\0')
-	if (strcmp(PASSWD, crypt(getpass("Wizard's password: "), "mT")) == 0)
+	if (strcmp(PASSWD, xcrypt(getpass("Wizard's password: "), "mT")) == 0)
 	{
 	    wizard = TRUE;
 	    argv++;
@@ -88,7 +97,10 @@ char **envp;
 #endif
     if (argc == 2)
 	if (!restore(argv[1], envp)) /* Note: restore will never return */
+	{
+	    endwin();
 	    exit(1);
+	}
     time(&now);
     lowtime = (int) now;
     dnum = (wizard && getenv("SEED") != NULL ?
@@ -100,8 +112,6 @@ char **envp;
 	printf("Hello %s, just a moment while I dig the dungeon...", whoami);
     fflush(stdout);
     seed = dnum;
-    srand(seed);			/* Aw01 Use a real random number generator */
-
     init_player();			/* Roll up the rogue */
     init_things();			/* Set up probabilities of things */
     init_names();			/* Set up names of scrolls */
@@ -109,6 +119,23 @@ char **envp;
     init_stones();			/* Set up stone settings of rings */
     init_materials();			/* Set up materials of wands */
     initscr();				/* Start up cursor package */
+
+    if (COLS < 70)
+    {
+	printf("\n\nSorry, %s, but your terminal window has too few columns.\n", whoami);
+	printf("Your terminal has %d columns, needs 70.\n",COLS);
+	endwin();
+	exit(1);
+    }
+    if (LINES < 22)
+    {
+	printf("\n\nSorry, %s, but your terminal window has too few lines.\n", whoami);
+	printf("Your terminal has %d lines, needs 22.\n",LINES);
+	endwin();
+	exit(1);
+    }
+    
+
     setup();
     /*
      * Set up windows
@@ -190,7 +217,8 @@ char **envp;
  *	Exit the program abnormally.
  */
 
-endit()
+void
+endit(int p)
 {
     fatal("Ok, if you want to exit that badly, I'll have to allow it\n");
 }
@@ -219,7 +247,7 @@ char *s;
 rnd(range)
 register int range;
 {
-    return range == 0 ? 0 : rand() % range;	/* Aw01 Use a real rand */
+    return range == 0 ? 0 : abs(RN) % range;
 }
 
 /*
@@ -240,7 +268,9 @@ register int number, sides;
 /*
  * handle stop and start signals
  */
-tstp()
+
+void
+tstp(int p)
 {
     mvcur(0, COLS - 1, LINES - 1, 0);
     endwin();
@@ -252,27 +282,30 @@ tstp()
     clearok(curscr, TRUE);
     touchwin(cw);
     draw(cw);
-    raw();	/* flush input */
-    noraw();
+    flush_type();	/* flush input */
 }
 # endif
 
 setup()
 {
-#ifdef CHECKTIME
-    int  checkout();
-#endif
-
 #ifndef DUMP
     signal(SIGHUP, auto_save);
     signal(SIGILL, auto_save);
     signal(SIGTRAP, auto_save);
+#ifdef SIGIOT
     signal(SIGIOT, auto_save);
+#endif
+#ifdef SIGEMT
     signal(SIGEMT, auto_save);
+#endif
     signal(SIGFPE, auto_save);
+#ifdef SIGBUS
     signal(SIGBUS, auto_save);
+#endif
     signal(SIGSEGV, auto_save);
+#ifdef SIGSYS
     signal(SIGSYS, auto_save);
+#endif
     signal(SIGPIPE, auto_save);
     signal(SIGTERM, auto_save);
 #endif
@@ -310,7 +343,9 @@ playit()
      * set up defaults for slow terminals
      */
 
-    if (_tty.sg_ospeed < B1200)
+    tcgetattr(0,&terminal);
+
+    if (cfgetospeed(&terminal) < B1200)
     {
 	terse = TRUE;
 	jump = TRUE;
@@ -327,10 +362,10 @@ playit()
     oldrp = roomin(&hero);
     while (playing)
 	command();			/* Command execution */
-    endit();
+    endit(-1);
 }
 
-#if MAXLOAD|MAXUSERS
+#if defined(MAXLOAD) || defined(MAXUSERS)
 /*
  * see if the system is being used too much for this game
  */
@@ -338,16 +373,12 @@ too_much()
 {
 #ifdef MAXLOAD
     double avec[3];
-#else
-    register int cnt;
-#endif
 
-#ifdef MAXLOAD
-    loadav(avec);
-    return (avec[2] > (MAXLOAD / 10.0));
-#else
-    return (ucount() > MAXUSERS);
+    if (loadav(avec) == 0)
+    	return (avec[2] > (MAXLOAD / 10.0));
+	else
 #endif
+        return (ucount() > MAXUSERS);
 }
 
 /*
@@ -357,7 +388,7 @@ author()
 {
     switch (getuid())
     {
-	case 24601:
+	case AUTHORUID:
 	    return TRUE;
 	default:
 	    return FALSE;
@@ -366,7 +397,8 @@ author()
 #endif
 
 #ifdef CHECKTIME
-checkout()
+void
+checkout(int p)
 {
     static char *msgs[] = {
 	"The load is too high to be playing.  Please leave in %d minutes",
@@ -418,53 +450,80 @@ int arg;
 
 #include <nlist.h>
 
-struct nlist avenrun =
+struct nlist avenrun[] =
 {
-    "_avenrun"
+    {"avenrun",0,0,0,0,0},
+    {0,0,0,0,0,0}
 };
 
 loadav(avg)
 register double *avg;
 {
     register int kmem;
-
+	int av[3];
     if ((kmem = open("/dev/kmem", 0)) < 0)
 	goto bad;
-    nlist(NAMELIST, &avenrun);
-    if (avenrun.n_type == 0)
+    
+	if (nlist(NAMELIST, avenrun) != 0)
     {
 bad:
 	avg[0] = avg[1] = avg[2] = 0.0;
-	return;
+	return -1;
     }
 
-    lseek(kmem, (long) avenrun.n_value, 0);
-    read(kmem, avg, 3 * sizeof (double));
+    lseek(kmem, (long) avenrun[0].n_value, 0);
+    read(kmem, av, 3 * sizeof (int));
+	
+	avg[0] = av[0] / 65536.0;
+	avg[1] = av[1] / 65536.0;
+	avg[2] = av[2] / 65536.0;
+
+	return(0);
 }
 #endif
 
 #ifdef UCOUNT
 
+#ifdef __CYGWIN__
 #include <utmp.h>
-
-struct utmp buf;
 
 ucount()
 {
-    register struct utmp *up;
-    register FILE *utmp;
-    register int count;
+    struct utmp *up=NULL;
+    int count=0;
 
-    if ((utmp = fopen(UTMP, "r")) == NULL)
-	return 0;
-
-    up = &buf;
-    count = 0;
-
-    while (fread(up, 1, sizeof (*up), utmp) > 0)
-	if (buf.ut_name[0] != '\0')
+    setutent();    
+    do
+    {
+	up = getutent();
+	if (up && up->ut_type == USER_PROCESS)
 	    count++;
-    fclose(utmp);
-    return count;
+    } while(up != NULL);
+   
+   endutent();
+
+   return(count);
 }
+#else
+#include <utmpx.h>
+
+ucount()
+{
+    struct utmpx *up=NULL;
+    int count=0;
+
+    setutxent();    
+    do
+    {
+	up = getutxent();
+	if (up && up->ut_type == USER_PROCESS)
+	    count++;
+    } while(up != NULL);
+   
+   endutxent();
+
+   return(count);
+}
+#endif
+
 #endif
