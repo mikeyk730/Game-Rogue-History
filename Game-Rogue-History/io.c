@@ -2,11 +2,18 @@
  * Various input/output functions
  *
  * @(#)io.c	3.10 (Berkeley) 6/15/81
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 #include "curses.h"
 #include <ctype.h>
 #include <stdarg.h>
+#include <string.h>
 #include "rogue.h"
 
 /*
@@ -58,13 +65,15 @@ addmsg(char *fmt, ...)
  */
 endmsg()
 {
-    strcpy(huh, msgbuf);
+    strncpy(huh, msgbuf, 80);
+    huh[79] = 0;
+
     if (mpos)
     {
 	wmove(cw, 0, mpos);
 	waddstr(cw, "--More--");
 	draw(cw);
-	wait_for(' ');
+	wait_for(cw,' ');
     }
     mvwaddstr(cw, 0, 0, msgbuf);
     wclrtoeol(cw);
@@ -76,7 +85,7 @@ endmsg()
 doadd(char *fmt, va_list ap)
 {
     vsprintf(&msgbuf[newpos], fmt, ap);
-    newpos = strlen(msgbuf);
+    newpos = (int) strlen(msgbuf);
 }
 
 /*
@@ -104,9 +113,20 @@ step_ok(ch)
  *	getchar.
  */
 
-readchar()
+readchar(win)
+WINDOW *win;
 {
-    return( wgetch(cw) );
+    int ch;
+
+    ch = md_readchar(win);
+
+    if ((ch == 3) || (ch == 0))
+    {
+	quit(0);
+        return(27);
+    }
+
+    return(ch);
 }
 
 /*
@@ -183,16 +203,17 @@ status()
  *	Sit around until the guy types the right key
  */
 
-wait_for(ch)
+wait_for(win, ch)
+WINDOW *win;
 register char ch;
 {
     register char c;
 
     if (ch == '\n')
-        while ((c = readchar()) != '\n' && c != '\r')
+        while ((c = readchar(win)) != '\n' && c != '\r')
 	    continue;
     else
-        while (readchar() != ch)
+        while (readchar(win) != ch)
 	    continue;
 }
 
@@ -209,7 +230,7 @@ char *message;
     touchwin(scr);
     wmove(scr, hero.y, hero.x);
     draw(scr);
-    wait_for(' ');
+    wait_for(scr,' ');
     clearok(cw, TRUE);
     touchwin(cw);
 }

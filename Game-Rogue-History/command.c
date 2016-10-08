@@ -2,12 +2,19 @@
  * Read and execute the user commands
  *
  * @(#)command.c	3.45 (Berkeley) 6/15/81
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 #include "curses.h"
 #include <stdlib.h>
 #include <ctype.h>
 #include <signal.h>
+#include <string.h>
 #include "rogue.h"
 
 /*
@@ -15,12 +22,12 @@
  *	Process the user commands
  */
 
-char countch = FALSE, direction = FALSE, newcount = FALSE;
-
 command()
 {
     register char ch;
     register int ntimes = 1;			/* Number of player moves */
+    static char countch, direction, newcount = FALSE;
+
 
     if (on(player, ISHASTE)) ntimes++;
     /*
@@ -51,7 +58,7 @@ command()
 	    else if (count) ch = countch;
 	    else
 	    {
-		ch = readchar();
+		ch = readchar(cw);
 		if (mpos != 0 && !running)	/* Erase message if its there */
 		    msg("");
 	    }
@@ -74,7 +81,7 @@ command()
 		while (isdigit(ch))
 		{
 		    count = count * 10 + (ch - '0');
-		    ch = readchar();
+		    ch = readchar(cw);
 		}
 		countch = ch;
 		/*
@@ -105,7 +112,7 @@ command()
 		    if (count && !newcount)
 			ch = direction;
 		    else
-			ch = readchar();
+			ch = readchar(cw);
 		    switch (ch)
 		    {
 			case 'h': case 'j': case 'k': case 'l':
@@ -144,7 +151,7 @@ command()
 			after = FALSE;
 		    else
 			missile(delta.y, delta.x);
-		when 'Q' : after = FALSE; quit(-1);
+		when 'Q' : after = FALSE; quit(0);
 		when 'i' : after = FALSE; inventory(pack, 0);
 		when 'I' : after = FALSE; picky_inven();
 		when 'd' : drop();
@@ -314,16 +321,17 @@ quit(int p)
     /*
      * Reset the signal in case we got here via an interrupt
      */
-    if (signal(SIGINT, quit) != quit)
+    if (signal(SIGINT, quit) != &quit)
 	mpos = 0;
     msg("Really quit?");
     draw(cw);
-    if (readchar() == 'y')
+    if (readchar(cw) == 'y')
     {
 	clear();
 	move(LINES-1, 0);
 	draw(stdscr);
-	score(purse, 1);
+	endwin();
+	score(purse, 1, 0);
 	exit(0);
     }
     else
@@ -397,7 +405,7 @@ help()
     register int cnt;
 
     msg("Character you want help for (* for all): ");
-    helpch = readchar();
+    helpch = readchar(cw);
     mpos = 0;
     /*
      * If its not a *, print the right help string
@@ -435,7 +443,7 @@ help()
     wmove(hw, LINES-1, 0);
     wprintw(hw, "--Press space to continue--");
     draw(hw);
-    wait_for(' ');
+    wait_for(hw,' ');
     wclear(hw);
     draw(hw);
     wmove(cw, 0, 0);
@@ -454,7 +462,7 @@ identify()
     register char ch, *str;
 
     msg("What do you want identified? ");
-    ch = readchar();
+    ch = readchar(cw);
     mpos = 0;
     if (ch == ESCAPE)
     {
@@ -533,52 +541,27 @@ u_level()
 
 shell()
 {
-    register int pid;
-    register char *sh;
-    int ret_status;
-
     /*
      * Set the terminal back to original mode
      */
-    sh = getenv("SHELL");
     wclear(hw);
     wmove(hw, LINES-1, 0);
     draw(hw);
     endwin();
     in_shell = TRUE;
     fflush(stdout);
-    /*
-     * Fork and do a shell
-     */
-    while((pid = fork()) < 0)
-	sleep(1);
-    if (pid == 0)
-    {
-	/*
-	 * Set back to original user, just in case
-	 */
-	setuid(getuid());
-	setgid(getgid());
-	execl(sh == NULL ? "/bin/sh" : sh, "shell", "-i", 0);
-	perror("No shelly");
-	exit(-1);
-    }
-    else
-    {
-	signal(SIGINT, SIG_IGN);
-	signal(SIGQUIT, SIG_IGN);
-	while (wait(&ret_status) != pid)
-	    continue;
-	signal(SIGINT, endit);
-	signal(SIGQUIT, endit);
-	printf("\n[Press return to continue]");
-	noecho();
-	crmode();
-	in_shell = FALSE;
-	wait_for('\n');
-	clearok(cw, TRUE);
-	touchwin(cw);
-    }
+
+    md_shellescape();
+
+    printf("\n[Press return to continue]");
+    fflush(stdout);
+    noecho();
+    crmode();
+    in_shell = FALSE;
+    wait_for(cw,'\n');
+    clearok(cw, TRUE);
+    touchwin(cw);
+    draw(cw);
 }
 
 /*
@@ -638,12 +621,13 @@ call()
 	msg("Call it: ");
     else
 	msg("What do you want to call it? ");
-    if (guess[obj->o_which] != NULL)
-	free(guess[obj->o_which]);
     strcpy(prbuf, elsewise);
     if (get_str(prbuf, cw) == NORM)
     {
+        if (guess[obj->o_which] != NULL)
+	    free(guess[obj->o_which]);
 	guess[obj->o_which] = malloc((unsigned int) strlen(prbuf) + 1);
-	strcpy(guess[obj->o_which], prbuf);
+	if (guess[obj->o_which] != NULL)
+	    strcpy(guess[obj->o_which], prbuf);
     }
 }

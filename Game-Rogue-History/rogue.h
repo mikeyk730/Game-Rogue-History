@@ -2,6 +2,12 @@
  * Rogue definitions and variable declarations
  *
  * @(#)rogue.h	3.38 (Berkeley) 6/15/81
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 /*
@@ -97,7 +103,7 @@
 /*
  * Various constants
  */
-#define	PASSWD "mTwA0qqnrlXTw"
+#define	PASSWD		"mTBellIQOsLNA"
 #define BEARTIME 3
 #define SLEEPTIME 5
 #define HEALTIME 30
@@ -387,8 +393,11 @@ struct object {
     int o_group;			/* Group number for this object */
 };
 
-struct words {
-    char w_string[30];
+struct delayed_action {
+    int d_type;
+    int (*d_func)();
+    int d_arg;
+    int d_time;
 };
 
 /*
@@ -436,7 +445,6 @@ extern int hungry_state;			/* How hungry is he */
 
 extern char take;				/* Thing the rogue is taking */
 extern char prbuf[80];				/* Buffer for sprintfs */
-extern char outbuf[BUFSIZ];			/* Output buffer for stdout */
 extern char runch;				/* Direction player is running */
 extern char *s_names[MAXSCROLLS];		/* Names of the scrolls */
 extern char *p_colors[MAXPOTIONS];		/* Colors of the potions */
@@ -494,30 +502,26 @@ extern coord nh;
 struct linked_list *find_mons(), *find_obj(), *get_item(), *new_item();
 struct linked_list *new_thing(), *wake_monster();
 
-char *getenv(), *tr_name(), *new();
-char *charge_str(),*vowelstr(), *inv_name(), *strcpy(), *strcat();
+char *tr_name(), *new();
+char *charge_str(),*vowelstr(), *inv_name();
 char *ctime(), *num(), *ring_num();
 
 struct room *roomin();
 
 coord *rndmove();
 
-void auto_save(), endit(), quit(), tstp(), checkout();
+void auto_save(int p), endit(int p), quit(int p), tstp(), checkout();
 int nohaste(), doctor(), runners(), swander();
 int unconfuse(), unsee(), rollwand(), stomach(), sight();
 
 struct trap *trap_at();
 
-extern struct termios terminal;
+extern char *rainbow[];
+extern char *stones[];
+extern char *wood[];
+extern char *metal[];
 
-#define NCOLORS 24
-#define NSYLLS  159
-#define NSTONES 20
-#define NWOOD 22
-#define NMETAL 11
-extern struct words rainbow[NCOLORS];
-extern struct words sylls[NSYLLS];
-extern struct words stones[NSTONES];
-extern struct words wood[NWOOD];
-extern struct words metal[NMETAL];
-
+extern const int cNCOLORS;
+extern const int cNSTONES;
+extern const int cNWOOD;
+extern const int cNMETAL;

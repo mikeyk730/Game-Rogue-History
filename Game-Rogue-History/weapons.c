@@ -2,10 +2,17 @@
  * Functions for dealing with problems brought about by weapons
  *
  * @(#)weapons.c	3.17 (Berkeley) 6/15/81
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 #include "curses.h"
 #include <ctype.h>
+#include <string.h>
 #include "rogue.h"
 
 #define NONE 100
@@ -169,7 +176,10 @@ bool pr;
 	return;
     }
     if (pr)
-	msg("Your %s vanishes as it hits the ground.", w_names[obj->o_which]);
+        if (obj->o_type == WEAPON) /* BUGFUX: Identification trick */
+            msg("Your %s vanishes as it hits the ground.", w_names[obj->o_which]);
+        else
+            msg("%s vanishes as it hits the ground.", inv_name(obj,TRUE));
     discard(item);
 }
 

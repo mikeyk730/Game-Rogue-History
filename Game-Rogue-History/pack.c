@@ -1,12 +1,18 @@
-#include "curses.h"
-#include <ctype.h>
-#include "rogue.h"
-
 /*
  * Routines to deal with the pack
  *
  * @(#)pack.c	3.6 (Berkeley) 6/15/81
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
+
+#include "curses.h"
+#include <ctype.h>
+#include "rogue.h"
 
 /*
  * add_pack:
@@ -252,7 +258,7 @@ int type;
     {
 	mvwaddstr(hw, LINES-1, 0, "--Press space to continue--");
 	draw(hw);
-	wait_for(' ');
+	wait_for(hw,' ');
 	clearok(cw, TRUE);
 	touchwin(cw);
     }
@@ -303,7 +309,7 @@ picky_inven()
     {
 	msg(terse ? "Item: " : "Which item do you wish to inventory: ");
 	mpos = 0;
-	if ((mch = readchar()) == ESCAPE)
+	if ((mch = readchar(cw)) == ESCAPE)
 	{
 	    msg("");
 	    return;
@@ -344,7 +350,7 @@ int type;
 	    if (terse)
 		addmsg(" what");
 	    msg("? (* for list): ");
-	    ch = readchar();
+	    ch = readchar(cw);
 	    mpos = 0;
 	    /*
 	     * Give the poor player a chance to abort the command

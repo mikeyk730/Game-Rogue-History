@@ -1,10 +1,17 @@
 /*
  * 	@(#)potions.c	3.1	3.1	5/7/81
  * Function(s) for dealing with potions
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 #include "curses.h"
 #include <stdlib.h>
+#include <string.h>
 #include "rogue.h"
 
 quaff()
@@ -39,14 +46,14 @@ quaff()
     {
 	case P_CONFUSE:
 	    if (off(player, ISHUH))
-	    {
 		msg("Wait, what's going on here. Huh? What? Who?");
-		if (on(player, ISHUH))
-		    lengthen(unconfuse, rnd(8)+HUHDURATION);
-		else
-		    fuse(unconfuse, 0, rnd(8)+HUHDURATION, AFTER);
-		player.t_flags |= ISHUH;
-	    }
+
+	    if (on(player, ISHUH))
+		lengthen(unconfuse, rnd(8)+HUHDURATION);
+	    else
+	        fuse(unconfuse, 0, rnd(8)+HUHDURATION, AFTER);
+
+	    player.t_flags |= ISHUH;
 	    p_know[P_CONFUSE] = TRUE;
 	when P_POISON:
 	    if (!ISWEARING(R_SUSTSTR))
@@ -186,7 +193,8 @@ quaff()
 	if (get_str(buf, cw) == NORM)
 	{
 	    p_guess[obj->o_which] = malloc((unsigned int) strlen(buf) + 1);
-	    strcpy(p_guess[obj->o_which], buf);
+	    if (p_guess[obj->o_which] != NULL)
+		strcpy(p_guess[obj->o_which], buf);
 	}
     }
     /*

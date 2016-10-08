@@ -4,11 +4,17 @@
  * under strange circumstances)
  *
  * @(#)wizard.c	3.8 (Berkeley) 6/3/81
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 #include "curses.h"
-#include <termios.h>
 #include <ctype.h>
+#include <string.h>
 #include "rogue.h"
 
 /*
@@ -77,33 +83,35 @@ create_obj()
     item = new_item(sizeof *obj);
     obj = (struct object *) ldata(item);
     msg("Type of item: ");
-    obj->o_type = readchar();
+    obj->o_type = readchar(cw);
     mpos = 0;
     msg("Which %c do you want? (0-f)", obj->o_type);
-    obj->o_which = (isdigit((ch = readchar())) ? ch - '0' : ch - 'a' + 10);
+    obj->o_which = (isdigit((ch = readchar(cw))) ? ch - '0' : ch - 'a' + 10);
     obj->o_group = 0;
     obj->o_count = 1;
     mpos = 0;
     if (obj->o_type == WEAPON || obj->o_type == ARMOR)
     {
 	msg("Blessing? (+,-,n)");
-	bless = readchar();
+	bless = readchar(cw);
 	mpos = 0;
-	if (bless == '-')
-	    obj->o_flags |= ISCURSED;
 	if (obj->o_type == WEAPON)
 	{
 	    init_weapon(obj, obj->o_which);
-	    if (bless == '-')
+	    if (bless == '-') {
 		obj->o_hplus -= rnd(3)+1;
+		obj->o_flags |= ISCURSED;
+	    }
 	    if (bless == '+')
 		obj->o_hplus += rnd(3)+1;
 	}
 	else
 	{
 	    obj->o_ac = a_class[obj->o_which];
-	    if (bless == '-')
+	    if (bless == '-') {
 		obj->o_ac += rnd(3)+1;
+		obj->o_flags |= ISCURSED;
+	    }
 	    if (bless == '+')
 		obj->o_ac -= rnd(3)+1;
 	}
@@ -116,7 +124,7 @@ create_obj()
 	    case R_ADDHIT:
 	    case R_ADDDAM:
 		msg("Blessing? (+,-,n)");
-		bless = readchar();
+		bless = readchar(cw);
 		mpos = 0;
 		if (bless == '-')
 		    obj->o_flags |= ISCURSED;
@@ -175,10 +183,10 @@ passwd()
     msg("Wizard's Password:");
     mpos = 0;
     sp = buf;
-    while ((c = getchar()) != '\n' && c != '\r' && c != '\033')
-	if (c == terminal.c_cc[VKILL])
+    while ((c = readchar(cw)) != '\n' && c != '\r' && c != '\033')
+	if (c == md_killchar())
 	    sp = buf;
-	else if (c == terminal.c_cc[VERASE] && sp > buf)
+	else if (c == md_erasechar() && sp > buf)
 	    sp--;
 	else
 	    *sp++ = c;

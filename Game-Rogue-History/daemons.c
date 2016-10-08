@@ -2,6 +2,12 @@
  * All the daemon and fuse functions are in here
  *
  * @(#)daemons.c	3.7 (Berkeley) 6/15/81
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 #include "curses.h"
@@ -46,7 +52,7 @@ doctor()
 
 swander()
 {
-    daemon(rollwand, 0, BEFORE);
+    start_daemon(rollwand, 0, BEFORE);
 }
 
 /*

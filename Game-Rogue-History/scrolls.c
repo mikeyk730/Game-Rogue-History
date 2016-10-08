@@ -3,11 +3,18 @@
  * Read a scroll and let it happen
  *
  * @(#)scrolls.c	3.5 (Berkeley) 6/15/81
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 #include "curses.h"
 #include <stdlib.h>
 #include <ctype.h>
+#include <string.h>
 #include "rogue.h"
 
 read_scroll()
@@ -112,8 +119,8 @@ read_scroll()
 		/*
 		 * Search for an open place
 		 */
-		for (y = hero.y; y <= hero.y+1; y++)
-		    for (x = hero.x; x <= hero.x+1; x++)
+		for (y = hero.y-1; y <= hero.y+1; y++)
+		    for (x = hero.x-1; x <= hero.x+1; x++)
 		    {
 			/*
 			 * Don't put a monster in top of the player.
@@ -176,7 +183,7 @@ read_scroll()
 				register struct thing *it;
 
 				it = (struct thing *) ldata(find_mons(i, j));
-				if (it->t_oldch == ' ')
+				if ((it != NULL) && (it->t_oldch == ' '))
 				    it->t_oldch = nch;
 			    }
 			    break;
@@ -291,7 +298,8 @@ read_scroll()
 	if (get_str(buf, cw) == NORM)
 	{
 	    s_guess[obj->o_which] = malloc((unsigned int) strlen(buf) + 1);
-	    strcpy(s_guess[obj->o_which], buf);
+	    if (s_guess[obj->o_which] != NULL)
+		strcpy(s_guess[obj->o_which], buf);
 	}
     }
     /*

@@ -2,15 +2,20 @@
  * machine dependicies
  *
  * %G% (Berkeley) %W%
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
+
 /*
  * where scorefile should live
  */
-#ifdef __DJGPP__
-#define SCOREFILE "C:\\GAMES\\ROGUE36\\ROGUE36.SCR"
-#else
-#define SCOREFILE	"/usr/local/games/rogue36/rogue36.scr"
-#endif
+
+#include <limits.h>
+#include <stdlib.h>
 
 /*
  * Variables for checking to make sure the system isn't too loaded
@@ -18,29 +23,33 @@
  */
 
 #define AUTHORUID        0
-#ifndef __DJGPP__
 #define	MAXUSERS	25	/* max number of users for this game */
 #define	MAXLOAD		40	/* 10 * max 15 minute load average */
-#undef  MAXLOAD                 /* load average check is non-portable */
-#endif
-
-#if defined(MAXUSERS) || defined(MAXLOAD)
 #define	CHECKTIME	15	/* number of minutes between load checks */
-				/* if not defined checks are only on startup */
+
+#ifndef PATH_MAX
+#define PATH_MAX _MAX_PATH
 #endif
 
-#ifdef MAXLOAD
-#define	LOADAV			/* defined if rogue should provide loadav() */
-
-#ifdef LOADAV
-#define	NAMELIST	"/unix"	/* where the system namelist lives */
+#ifdef _WIN32
+#define fstat _fstat
+#define stat _stat
+#define open _open
+#define getpid _getpid
+#define fdopen _fdopen
+#define unlink _unlink
+#ifndef __MINGW32__
+#define fileno _fileno
 #endif
 #endif
 
-#ifdef MAXUSERS
-#define	UCOUNT			/* defined if rogue should provide ucount() */
-
-#ifdef UCOUNT
-#define UTMP	"/etc/utmp"	/* where utmp file lives */
-#endif
-#endif
+extern char *md_getusername();
+extern char *md_gethomedir();
+extern void md_flushinp();
+extern char *md_getshell();
+extern char *md_gethostname();
+extern void md_dobinaryio();
+extern char *md_getpass();
+extern void md_init();
+extern char *xcrypt();
+extern char *md_getroguedir();

@@ -2,6 +2,12 @@
  * Draw the nine rooms on the screen
  *
  * @(#)rooms.c	3.8 (Berkeley) 6/15/81
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 #include "curses.h"
@@ -26,7 +32,7 @@ do_rooms()
     /*
      * Clear things for a new level
      */
-    for (rp = rooms; rp < &rooms[MAXROOMS]; rp++)
+    for (rp = rooms; rp <= &rooms[MAXROOMS-1]; rp++)
 	rp->r_goldval = rp->r_nexits = rp->r_flags = 0;
     /*
      * Put the gone rooms, if any, on the level
@@ -55,7 +61,7 @@ do_rooms()
 		rp->r_pos.x = top.x + rnd(bsze.x-2) + 1;
 		rp->r_pos.y = top.y + rnd(bsze.y-2) + 1;
 		rp->r_max.x = -COLS;
-		rp->r_max.x = -LINES;
+		rp->r_max.y = -LINES;
 	    } until(rp->r_pos.y > 0 && rp->r_pos.y < LINES-1);
 	    continue;
 	}

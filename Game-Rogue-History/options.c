@@ -4,11 +4,17 @@
  * it is the only way to keep the wolves off of my back.
  *
  * @(#)options.c	3.3 (Berkeley) 5/25/81
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 #include "curses.h"
-#include <termios.h>
 #include <ctype.h>
+#include <string.h>
 #include "rogue.h"
 
 #define	NUM_OPTS	(sizeof optlist / sizeof (OPTION))
@@ -60,7 +66,7 @@ option()
     /*
      * Display current values of options
      */
-    for (op = optlist; op < &optlist[NUM_OPTS]; op++)
+    for (op = optlist; op <= &optlist[NUM_OPTS-1]; op++)
     {
 	waddstr(hw, op->o_prompt);
 	(*op->o_putfunc)(op->o_opt);
@@ -70,7 +76,7 @@ option()
      * Set values
      */
     wmove(hw, 0, 0);
-    for (op = optlist; op < &optlist[NUM_OPTS]; op++)
+    for (op = optlist; op <= &optlist[NUM_OPTS-1]; op++)
     {
 	waddstr(hw, op->o_prompt);
 	if ((retval = (*op->o_getfunc)(op->o_opt, hw)))
@@ -82,7 +88,7 @@ option()
 	    }
 	    else	/* trying to back up beyond the top */
 	    {
-		putchar('\007');
+		beep();
 		wmove(hw, 0, 0);
 		op--;
 	    }
@@ -92,7 +98,7 @@ option()
      */
     mvwaddstr(hw, LINES-1, 0, "--Press space to continue--");
     draw(hw);
-    wait_for(' ');
+    wait_for(hw,' ');
     clearok(cw, TRUE);
     touchwin(cw);
     after = FALSE;
@@ -134,7 +140,7 @@ WINDOW *win;
     {
 	wmove(win, oy, ox);
 	draw(win);
-	switch (readchar())
+	switch (readchar(win))
 	{
 	    case 't':
 	    case 'T':
@@ -182,24 +188,36 @@ WINDOW *win;
      * loop reading in the string, and put it in a temporary buffer
      */
     for (sp = buf;
-	(c = readchar()) != '\n' && c != '\r' && c != '\033' && c != '\007';
+	(c = readchar(win)) != '\n' && c != '\r' && c != '\033' && c != '\007';
 	wclrtoeol(win), draw(win))
     {
 	if (c == -1)
 	    continue;
-	else if (c == terminal.c_cc[VERASE])	/* process erase character */
+	else if (c == md_erasechar())	/* process erase character */
 	{
 	    if (sp > buf)
 	    {
 		register int i;
+		int myx, myy;
 
 		sp--;
-		for (i = strlen(unctrl(*sp)); i; i--)
-		    waddch(win, '\b');
+
+		for (i = (int) strlen(unctrl(*sp)); i; i--)
+		{
+		    getyx(win,myy,myx);
+		    if ((myx == 0)&& (myy > 0))
+		    {
+			wmove(win,myy-1,getmaxx(win)-1);
+			waddch(win,' ');
+			wmove(win,myy-1,getmaxx(win)-1);
+		    }
+		    else
+			waddch(win, '\b');
+		}
 	    }
 	    continue;
 	}
-	else if (c == terminal.c_cc[VKILL])	/* process kill character */
+	else if (c == md_killchar())	/* process kill character */
 	{
 	    sp = buf;
 	    wmove(win, oy, ox);
@@ -215,8 +233,12 @@ WINDOW *win;
 		sp += strlen(home);
 		continue;
 	    }
-	*sp++ = c;
-	waddstr(win, unctrl(c));
+
+	if ((sp - buf) < 78) /* Avoid overflow */
+	{
+	    *sp++ = c;
+	    waddstr(win, unctrl(c));
+	}
     }
     *sp = '\0';
     if (sp > buf)	/* only change option if something has been typed */
@@ -261,7 +283,7 @@ register char *str;
 	/*
 	 * Look it up and deal with it
 	 */
-	for (op = optlist; op < &optlist[NUM_OPTS]; op++)
+	for (op = optlist; op <= &optlist[NUM_OPTS-1]; op++)
 	    if (EQSTR(str, op->o_name, len))
 	    {
 		if (op->o_putfunc == put_bool)	/* if option is a boolean */

@@ -2,10 +2,17 @@
  * global variable initializaton
  *
  * @(#)init.c	3.33 (Berkeley) 6/15/81
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 #include "curses.h"
 #include <ctype.h>
+#include <string.h>
 #include "rogue.h"
 
 bool playing = TRUE, running = FALSE, wizard = FALSE;
@@ -55,7 +62,6 @@ char *ws_type[MAXSTICKS];                /* Is it a wand or a staff */
 char file_name[80];                      /* Save file name */
 char home[80];                           /* User's home directory */
 char prbuf[80];                          /* Buffer for sprintfs */
-char outbuf[BUFSIZ];                     /* Output buffer for stdout */
 int max_hp;                              /* Player's max hit points */
 int ntraps;                              /* Number of traps on this level */
 int max_level;                           /* Deepest player has gone */
@@ -128,34 +134,37 @@ init_player()
  * potions and scrolls
  */
 
-struct words rainbow[NCOLORS] = {
-    "Red",
-    "Blue",
-    "Green",
-    "Yellow",
-    "Black",
-    "Brown",
-    "Orange",
-    "Pink",
-    "Purple",
-    "Grey",
-    "White",
-    "Silver",
-    "Gold",
-    "Violet",
-    "Clear",
-    "Vermilion",
-    "Ecru",
-    "Turquoise",
-    "Magenta",
-    "Amber",
-    "Topaz",
-    "Plaid",
-    "Tan",
-    "Tangerine"
+char *rainbow[] = {
+    "red",
+    "blue",
+    "green",
+    "yellow",
+    "black",
+    "brown",
+    "orange",
+    "pink",
+    "purple",
+    "grey",
+    "white",
+    "silver",
+    "gold",
+    "violet",
+    "clear",
+    "vermilion",
+    "ecru",
+    "turquoise",
+    "magenta",
+    "amber",
+    "topaz",
+    "plaid",
+    "tan",
+    "tangerine"
 };
 
-struct words sylls[NSYLLS] = {
+#define NCOLORS (sizeof rainbow / sizeof (char *))
+const int cNCOLORS = NCOLORS;
+
+char *sylls[] = {
     "a", "ab", "ag", "aks", "ala", "an", "ankh", "app", "arg", "arze",
     "ash", "ban", "bar", "bat", "bek", "bie", "bin", "bit", "bjor",
     "blu", "bot", "bu", "byt", "comp", "con", "cos", "cre", "dalf",
@@ -175,67 +184,76 @@ struct words sylls[NSYLLS] = {
     "zant", "zap", "zeb", "zim", "zok", "zon", "zum",
 };
 
-struct words stones[NSTONES] = {
-    "Agate",
-    "Alexandrite",
-    "Amethyst",
-    "Carnelian",
-    "Diamond",
-    "Emerald",
-    "Granite",
-    "Jade",
-    "Kryptonite",
-    "Lapus lazuli",
-    "Moonstone",
-    "Obsidian",
-    "Onyx",
-    "Opal",
-    "Pearl",
-    "Ruby",
-    "Saphire",
-    "Tiger eye",
-    "Topaz",
-    "Turquoise",
+char *stones[] = {
+    "agate",
+    "alexandrite",
+    "amethyst",
+    "carnelian",
+    "diamond",
+    "emerald",
+    "granite",
+    "jade",
+    "kryptonite",
+    "lapus lazuli",
+    "moonstone",
+    "obsidian",
+    "onyx",
+    "opal",
+    "pearl",
+    "ruby",
+    "saphire",
+    "tiger eye",
+    "topaz",
+    "turquoise",
 };
 
-struct words wood[NWOOD] = {
-    "Avocado wood",
-    "Balsa",
-    "Banyan",
-    "Birch",
-    "Cedar",
-    "Cherry",
-    "Cinnibar",
-    "Driftwood",
-    "Ebony",
-    "Eucalyptus",
-    "Hemlock",
-    "Ironwood",
-    "Mahogany",
-    "Manzanita",
-    "Maple",
-    "Oak",
-    "Persimmon wood",
-    "Redwood",
-    "Rosewood",
-    "Teak",
-    "Walnut",
-    "Zebra wood",
+#define NSTONES (sizeof stones / sizeof (char *))
+const int cNSTONES = NSTONES;
+
+char *wood[] = {
+    "avocado wood",
+    "balsa",
+    "banyan",
+    "birch",
+    "cedar",
+    "cherry",
+    "cinnibar",
+    "driftwood",
+    "ebony",
+    "eucalyptus",
+    "hemlock",
+    "ironwood",
+    "mahogany",
+    "manzanita",
+    "maple",
+    "oak",
+    "persimmon wood",
+    "redwood",
+    "rosewood",
+    "teak",
+    "walnut",
+    "zebra wood",
 };
 
-struct words metal[NMETAL] = {
-    "Aluminium",
-    "Bone",
-    "Brass",
-    "Bronze",
-    "Copper",
-    "Iron",
-    "Lead",
-    "Pewter",
-    "Steel",
-    "Tin",
-    "Zinc",
+#define NWOOD (sizeof wood / sizeof (char *))
+const int cNWOOD = NWOOD;
+
+char *metal[] = {
+    "aluminium",
+    "bone",
+    "brass",
+    "bronze",
+    "copper",
+    "iron",
+    "lead",
+    "pewter",
+    "steel",
+    "tin",
+    "zinc",
 };
+
+#define NMETAL (sizeof metal / sizeof (char *))
+const int cNMETAL = NMETAL;
 
 struct magic_item things[NUMTHINGS] = {
     { "",			27 },	/* potion */
@@ -295,7 +313,7 @@ struct magic_item r_magic[MAXRINGS] = {
     { "increase damage",	 8, 220 },
     { "regeneration",		 4, 260 },
     { "slow digestion",		 9, 240 },
-    { "telportation",		 9, 100 },
+    { "teleportation",		 9, 100 },
     { "stealth",		 7, 100 },
 };
 
@@ -349,6 +367,9 @@ int a_chances[MAXARMORS] = {
     100
 };
 
+#define MAX3(a,b,c)     (a > b ? (a > c ? a : c) : (b > c ? b : c))
+static bool used[MAX3(NCOLORS, NSTONES, NWOOD)];
+
 /*
  * init_things
  *	Initialize the probabilities for types of things
@@ -369,16 +390,17 @@ init_things()
 
 init_colors()
 {
-    register int i;
-    register char *str;
+    register int i, j;
 
+    for (i = 0; i < NCOLORS; i++)
+	used[i] = 0;
     for (i = 0; i < MAXPOTIONS; i++)
     {
 	do
-	    str = rainbow[rnd(NCOLORS)].w_string;
-	until (isupper(*str));
-	*str = tolower(*str);
-	p_colors[i] = str;
+	    j = rnd(NCOLORS);
+	until (!used[j]);
+	used[j] = TRUE;
+	p_colors[i] = rainbow[j];
 	p_know[i] = FALSE;
 	p_guess[i] = NULL;
 	if (i > 0)
@@ -407,7 +429,7 @@ init_names()
 	    nsyl = rnd(3)+1;
 	    while(nsyl--)
 	    {
-		sp = sylls[rnd(NSYLLS)].w_string;
+		sp = sylls[rnd((sizeof sylls) / (sizeof (char *)))];
 		while(*sp)
 		    *cp++ = *sp++;
 	    }
@@ -431,16 +453,17 @@ init_names()
 
 init_stones()
 {
-    register int i;
-    register char *str;
+    register int i, j;
 
+    for (i = 0; i < NSTONES; i++)
+	used[i] = FALSE;
     for (i = 0; i < MAXRINGS; i++)
     {
 	do
-	    str = stones[rnd(NSTONES)].w_string;
-	until (isupper(*str));
-	*str = tolower(*str);
-	r_stones[i] = str;
+	    j = rnd(NSTONES);
+	until (!used[j]);
+	used[j] = TRUE;
+	r_stones[i] = stones[j];
 	r_know[i] = FALSE;
 	r_guess[i] = NULL;
 	if (i > 0)
@@ -456,27 +479,40 @@ init_stones()
 
 init_materials()
 {
-    register int i;
-    register char *str;
+    register int i, j;
+    static bool metused[NMETAL];
+
+    for (i = 0; i < NWOOD; i++)
+	used[i] = FALSE;
+    for (i = 0; i < NMETAL; i++)
+	metused[i] = FALSE;
 
     for (i = 0; i < MAXSTICKS; i++)
     {
-	do
+	for (;;)
 	    if (rnd(100) > 50)
 	    {
-		str = metal[rnd(NMETAL)].w_string;
-		if (isupper(*str))
-			ws_type[i] = "wand";
+		j = rnd(NMETAL);
+		if (!metused[j])
+		{
+		    metused[j] = TRUE;
+		    ws_made[i] = metal[j];
+		    ws_type[i] = "wand";
+		    break;
+		}
 	    }
 	    else
 	    {
-		str = wood[rnd(NWOOD)].w_string;
-		if (isupper(*str))
-			ws_type[i] = "staff";
+		j = rnd(NWOOD);
+		if (!used[j])
+		{
+		    used[j] = TRUE;
+		    ws_made[i] = wood[j];
+		    ws_type[i] = "staff";
+		    break;
+		}
 	    }
-	until (isupper(*str));
-	*str = tolower(*str);
-	ws_made[i] = str;
+
 	ws_know[i] = FALSE;
 	ws_guess[i] = NULL;
 	if (i > 0)

@@ -1,12 +1,19 @@
-#include "curses.h"
-#include <stdlib.h>
-#include "rogue.h"
-
 /*
  * routines dealing specifically with rings
  *
  * @(#)rings.c	3.17 (Berkeley) 6/15/81
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
+
+#include "curses.h"
+#include <stdlib.h>
+#include <string.h>
+#include "rogue.h"
 
 ring_on()
 {
@@ -89,7 +96,8 @@ ring_on()
 	if (get_str(buf, cw) == NORM)
 	{
 	    r_guess[obj->o_which] = malloc((unsigned int) strlen(buf) + 1);
-	    strcpy(r_guess[obj->o_which], buf);
+	    if (r_guess[obj->o_which] != NULL)
+		strcpy(r_guess[obj->o_which], buf);
 	}
 	msg("");
     }
@@ -136,7 +144,7 @@ gethand()
 	    msg("Left or Right ring? ");
 	else
 	    msg("Left hand or right hand? ");
-	if ((c = readchar()) == 'l' || c == 'L')
+	if ((c = readchar(cw)) == 'l' || c == 'L')
 	    return LEFT;
 	else if (c == 'r' || c == 'R')
 	    return RIGHT;

@@ -3,6 +3,12 @@
  * Death or a total win
  *
  * @(#)rip.c	3.13 (Berkeley) 6/16/81
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 #include "curses.h"
@@ -10,8 +16,8 @@
 #include <signal.h>
 #include <ctype.h>
 #include <sys/types.h>
-#include <pwd.h>
 #include <fcntl.h>
+#include <string.h>
 #include "machdep.h"
 #include "rogue.h"
 
@@ -46,7 +52,6 @@ register char monst;
     register struct tm *lt;
     time_t date;
     char buf[80];
-    struct tm *localtime();
 
     time(&date);
     lt = localtime(&date);
@@ -54,19 +59,18 @@ register char monst;
     move(8, 0);
     while (*dp)
 	printw("%s\n", *dp++);
-    mvaddstr(14, 28-((strlen(whoami)+1)/2), whoami);
+    mvaddstr(14, 28-(((int)strlen(whoami)+1)/2), whoami);
     purse -= purse/10;
     sprintf(buf, "%d Au", purse);
-    mvaddstr(15, 28-((strlen(buf)+1)/2), buf);
+    mvaddstr(15, 28-(((int)strlen(buf)+1)/2), buf);
     killer = killname(monst);
-    mvaddstr(17, 28-((strlen(killer)+1)/2), killer);
+    mvaddstr(17, 28-(((int)strlen(killer)+1)/2), killer);
     mvaddstr(16, 33, vowelstr(killer));
     sprintf(prbuf, "%4d", 1900+lt->tm_year);
     mvaddstr(18, 26, prbuf);
     move(LINES-1, 0);
     draw(stdscr);
     score(purse, 0, monst);
-    endwin();
     exit(0);
 }
 
@@ -83,7 +87,7 @@ char monst;
 	char sc_name[80];
 	int sc_flags;
 	int sc_level;
-	int sc_uid;
+	char sc_login[8];
 	char sc_monster;
     } top_ten[10];
     register struct sc_ent *scp;
@@ -98,15 +102,25 @@ char monst;
 	"quit",
 	"A total winner",
     };
+    char scoreline[100];
+    char score_file[PATH_MAX];
+    int rogue_ver = 0, scorefile_ver = 0;
 
-    if (flags != -1)
-	endwin();
     /*
      * Open file and read list
      */
+    
+    /* Get default score file */
+    strcpy(score_file, md_getroguedir());
 
-    if ((fd = open(SCOREFILE, O_RDWR | O_CREAT, 0666 )) < 0)
+    if (*score_file)
+        strcat(score_file,"\\");
+
+    strcat(score_file, "rogue36.scr");
+
+    if ((fd = open(score_file, O_RDWR | O_CREAT, 0666 )) < 0)
 	return;
+
     outf = (FILE *) fdopen(fd, "w");
 
     for (scp = top_ten; scp <= &top_ten[9]; scp++)
@@ -117,22 +131,38 @@ char monst;
 	scp->sc_flags = RN;
 	scp->sc_level = RN;
 	scp->sc_monster = RN;
-	scp->sc_uid = RN;
+	scp->sc_login[0] = '\0';
     }
 
     signal(SIGINT, SIG_DFL);
-    if (flags != -1)
+    if ((flags != -1) && (flags != 1))
     {
-	printf("[Press return to continue]");
-	fflush(stdout);
-	fgets(prbuf,80,stdin);
+	mvaddstr(LINES-1, 0, "[Press return to continue]");
+	draw(stdscr);
+	prbuf[0] = 0;
+	get_str(prbuf, stdscr);
+	endwin();
     }
     if (wizard)
 	if (strcmp(prbuf, "names") == 0)
 	    prflags = 1;
 	else if (strcmp(prbuf, "edit") == 0)
 	    prflags = 2;
-    encread((char *) top_ten, sizeof top_ten, fd);
+
+    encread((char *) scoreline, 100, fd);
+    sscanf(scoreline, "R%d %d\n", &rogue_ver, &scorefile_ver);
+
+    if ((rogue_ver == 36) && (scorefile_ver == 2))
+        for(i = 0; i < 10; i++)
+	{
+	    encread((char *) &top_ten[i].sc_name, 80, fd);
+	    encread((char *) &top_ten[i].sc_login, 8, fd);
+	    encread((char *) scoreline, 100, fd);
+	    sscanf(scoreline, " %d %d %d %d \n",
+		&top_ten[i].sc_score,  &top_ten[i].sc_flags,
+		&top_ten[i].sc_level,  &top_ten[i].sc_monster);
+	}
+
     /*
      * Insert her in list if need be
      */
@@ -153,13 +183,15 @@ char monst;
 	    else
 		scp->sc_level = level;
 	    scp->sc_monster = monst;
-	    scp->sc_uid = getuid();
+	    strncpy(scp->sc_login, md_getusername(), 8);
 	}
     }
     /*
      * Print the list
      */
-    printf("\nTop Ten Adventurers:\nRank\tScore\tName\n");
+    if (flags != -1)
+	printf("\n\n\n");
+    printf("Top Ten Adventurers:\nRank\tScore\tName\n");
     for (scp = top_ten; scp <= &top_ten[9]; scp++) {
 	if (scp->sc_score) {
 	    printf("%d\t%d\t%s: %s on level %d", scp - top_ten + 1,
@@ -175,12 +207,7 @@ char monst;
 	    }
 	    if (prflags == 1)
 	    {
-		struct passwd *pp, *getpwuid();
-
-		if ((pp = getpwuid(scp->sc_uid)) == NULL)
-		    printf(" (%d)", scp->sc_uid);
-		else
-		    printf(" (%s)", pp->pw_name);
+		printf(" (%s)", scp->sc_login);
 		putchar('\n');
 	    }
 	    else if (prflags == 2)
@@ -208,7 +235,17 @@ char monst;
     /*
      * Update the list file
      */
-    encwrite((char *) top_ten, sizeof top_ten, outf);
+    strcpy(scoreline, "R36 2\n");
+    encwrite(scoreline, 100, outf);
+    for(i = 0; i < 10; i++)
+    {
+        encwrite((char *) &top_ten[i].sc_name, 80, outf);
+        encwrite((char *) &top_ten[i].sc_login, 8, outf);
+        sprintf(scoreline, " %d %d %d %d \n",
+        top_ten[i].sc_score,  top_ten[i].sc_flags,
+        top_ten[i].sc_level,  top_ten[i].sc_monster);
+        encwrite((char *) scoreline, 100, outf);
+    }
     fclose(outf);
 }
 

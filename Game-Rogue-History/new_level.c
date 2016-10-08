@@ -1,12 +1,20 @@
-#include "curses.h"
-#include "rogue.h"
-
 /*
  * new_level:
  *	Dig and draw a new level
  *
  * @(#)new_level.c	3.7 (Berkeley) 6/2/81
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
+
+#include "curses.h"
+#include "rogue.h"
+
+#include <string.h>
 
 new_level()
 {
@@ -148,15 +156,15 @@ put_things()
 	attach(lvl_obj, item);
 	cur = (struct object *) ldata(item);
 	cur->o_hplus = cur->o_dplus = 0;
-	strcpy(cur->o_damage,"0d0");
-        strcpy(cur->o_hurldmg, "0d0");
+	strcpy(cur->o_damage, "0d0");
+	strcpy(cur->o_hurldmg, "0d0");
 	cur->o_ac = 11;
 	cur->o_type = AMULET;
 	/*
 	 * Put it somewhere
 	 */
-	rm = rnd_room();
 	do {
+	    rm = rnd_room();
 	    rnd_pos(&rooms[rm], &tp);
 	} until (winat(tp.y, tp.x) == FLOOR);
 	mvaddch(tp.y, tp.x, cur->o_type);

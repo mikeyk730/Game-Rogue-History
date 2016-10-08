@@ -1,12 +1,18 @@
-#include "curses.h"
-#include "rogue.h"
-#include <ctype.h>
-
 /*
  * all sorts of miscellaneous routines
  *
  * @(#)misc.c	3.13 (Berkeley) 6/15/81
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
+
+#include "curses.h"
+#include "rogue.h"
+#include <ctype.h>
 
 /*
  * tr_name:
@@ -398,7 +404,7 @@ get_dir()
     do
     {
 	gotit = TRUE;
-	switch (readchar())
+	switch (readchar(cw))
 	{
 	    case 'h': case'H': delta.y =  0; delta.x = -1;
 	    when 'j': case'J': delta.y =  1; delta.x =  0;

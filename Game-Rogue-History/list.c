@@ -2,11 +2,17 @@
  * Functions for dealing with linked lists of goodies
  *
  * @(#)list.c	3.3 (Berkeley) 6/15/81
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
-#include <unistd.h>
 #include "curses.h"
 #include <stdlib.h>
+#include <string.h>
 #include "rogue.h"
 
 /*
@@ -107,7 +113,7 @@ int size;
 
     if (space == NULL)
     {
-	sprintf(prbuf, "Rogue ran out of memory (%d).  Fatal error!", sbrk(0));
+	sprintf(prbuf, "Rogue ran out of memory (%d).  Fatal error!", md_memused());
         fatal(prbuf);
     }
     total++;

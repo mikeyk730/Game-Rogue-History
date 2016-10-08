@@ -3,10 +3,17 @@
  * potions and scrolls
  *
  * @(#)things.c	3.37 (Berkeley) 6/15/81
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 #include "curses.h"
 #include <ctype.h>
+#include <string.h>
 #include "rogue.h"
 
 /*
@@ -138,7 +145,7 @@ money()
 {
     register struct room *rp;
 
-    for (rp = rooms; rp < &rooms[MAXROOMS]; rp++)
+    for (rp = rooms; rp <= &rooms[MAXROOMS-1]; rp++)
 	if (ce(hero, rp->r_gold))
 	{
 	    if (notify)

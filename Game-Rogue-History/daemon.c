@@ -3,6 +3,12 @@
  * future.
  *
  * @(#)daemon.c	3.3 (Berkeley) 6/15/81
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 #include "curses.h"
@@ -14,12 +20,7 @@
 
 #define _X_ { EMPTY }
 
-struct delayed_action {
-    int d_type;
-    int (*d_func)();
-    int d_arg;
-    int d_time;
-} d_list[MAXDAEMONS] = {
+struct delayed_action d_list[MAXDAEMONS] = {
     _X_, _X_, _X_, _X_, _X_, _X_, _X_, _X_, _X_, _X_,
     _X_, _X_, _X_, _X_, _X_, _X_, _X_, _X_, _X_, _X_, 
 };
@@ -64,16 +65,20 @@ register int (*func)();
  *	Start a daemon, takes a function.
  */
 
-daemon(func, arg, type)
+start_daemon(func, arg, type)
 int (*func)(), arg, type;
 {
     register struct delayed_action *dev;
 
     dev = d_slot();
-    dev->d_type = type;
-    dev->d_func = func;
-    dev->d_arg = arg;
-    dev->d_time = DAEMON;
+ 
+    if (dev != NULL) 
+    {
+        dev->d_type = type;
+        dev->d_func = func;
+        dev->d_arg = arg;
+        dev->d_time = DAEMON;
+    }
 }
 
 /*
@@ -127,10 +132,14 @@ int (*func)(), arg, time, type;
     register struct delayed_action *wire;
 
     wire = d_slot();
-    wire->d_type = type;
-    wire->d_func = func;
-    wire->d_arg = arg;
-    wire->d_time = time;
+
+    if (wire != NULL)
+    {
+        wire->d_type = type;
+        wire->d_func = func;
+        wire->d_arg = arg;
+        wire->d_time = time;
+    }
 }
 
 /*

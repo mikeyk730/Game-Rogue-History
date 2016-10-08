@@ -2,6 +2,12 @@
  * Draw the connecting passages
  *
  * @(#)passages.c	3.4 (Berkeley) 6/15/81
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 #include "curses.h"
@@ -198,7 +204,7 @@ int r1, r2;
 	turn_spot = rnd(distance-1) + 1;
     }
     else
-	debug("error in connection tables");
+	fatal("error in connection tables");
     /*
      * Draw in the doors on either side of the passage or just put #'s
      * if the rooms are gone.
@@ -261,9 +267,10 @@ register struct room *rm;
 register coord *cp;
 {
     cmov(*cp);
-    addch(rnd(10) < level - 1 && rnd(100) < 20 ? SECRETDOOR : DOOR);
+    addch( (rnd(10) < level - 1 && rnd(100) < 20 ? SECRETDOOR : DOOR) );
     rm->r_exit[rm->r_nexits++] = *cp;
 }
+
 /*
  * add_pass:
  *	add the passages to the current window (wizard command)

@@ -2,6 +2,12 @@
  * Hero movement commands
  *
  * @(#)move.c	3.26 (Berkeley) 6/15/81
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 #include "curses.h"
@@ -211,7 +217,7 @@ register int y, x;
     else if (ch == 'M' || ch == 'I')
     {
 	if ((it = find_mons(y, x)) == NULL)
-	    msg("Can't find monster in show");
+	    fatal("Can't find monster in show");
 	tp = (struct thing *) ldata(it);
 	if (ch == 'M')
 	    ch = tp->t_disguise;
@@ -274,8 +280,7 @@ register coord *tc;
 		init_weapon(arrow, ARROW);
 		arrow->o_count = 1;
 		arrow->o_pos = hero;
-		arrow->o_hplus = 0;
-		arrow->o_dplus = 0;
+		arrow->o_hplus = arrow->o_dplus = 0; /* "arrow bug" FIX */
 		fall(item, FALSE);
 	    }
 	when TELTRAP:
@@ -317,7 +322,7 @@ register int y, x;
     if (tp == ep)
     {
 	sprintf(prbuf, "Trap at %d,%d not in array", y, x);
-	debug(prbuf);
+	fatal(prbuf);
     }
     return tp;
 }

@@ -2,6 +2,12 @@
  * Code for one object to chase another
  *
  * @(#)chase.c	3.17 (Berkeley) 6/15/81
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 #include "curses.h"
@@ -130,7 +136,10 @@ coord *spot;
      * If we couldn't find him, something is funny
      */
     if ((item = find_mons(runner->y, runner->x)) == NULL)
+    {
 	msg("CHASER '%s'", unctrl(winat(runner->y, runner->x)));
+	return;
+    }
     tp = (struct thing *) ldata(item);
     /*
      * Start the beastie running
@@ -248,7 +257,7 @@ register coord *cp;
 {
     register struct room *rp;
 
-    for (rp = rooms; rp < &rooms[MAXROOMS]; rp++)
+    for (rp = rooms; rp <= &rooms[MAXROOMS-1]; rp++)
 	if (inroom(rp, cp))
 	    return rp;
     return NULL;

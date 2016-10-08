@@ -2,10 +2,17 @@
  * File with various monster functions in it
  *
  * @(#)monsters.c	3.18 (Berkeley) 6/15/81
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 #include "curses.h"
 #include "rogue.h"
+#include <string.h>
 #include <ctype.h>
 
 /*
@@ -115,7 +122,8 @@ wanderer()
 	if ((ch = mvwinch(stdscr, cp.y, cp.x)) == ERR)
 	{
 	    debug("Routine wanderer: mvwinch failed to %d,%d", cp.y, cp.x);
-	    wait_for('\n');
+	    if (wizard)
+		wait_for(cw,'\n');
 	    return;
 	}
     } until(hr != rp && step_ok(ch));
@@ -141,7 +149,7 @@ int y, x;
     register char ch;
 
     if ((it = find_mons(y, x)) == NULL)
-	msg("Can't find monster in show");
+	fatal("Can't find monster in wake");
     tp = (struct thing *) ldata(it);
     ch = tp->t_type;
     /*
@@ -180,11 +188,16 @@ int y, x;
      * Let greedy ones guard gold
      */
     if (on(*tp, ISGREED) && off(*tp, ISRUN))
+    {
+        rp = roomin(&hero);
+
 	if (rp != NULL && rp->r_goldval)
 	{
 	    tp->t_dest = &rp->r_gold;
 	    tp->t_flags |= ISRUN;
 	}
+    }
+
     return it;
 }
 
@@ -200,13 +213,13 @@ genocide()
     if (!terse)
 	addmsg(" do you wish to wipe out");
     msg("? ");
-    while (!isalpha(c = readchar()))
+    while (!isalpha(c = readchar(cw)))
 	if (c == ESCAPE)
 	    return;
 	else
 	{
 	    mpos = 0;
-	    msg("Please specifiy a letter between 'A' and 'Z'");
+	    msg("Please specify a letter between 'A' and 'Z'");
 	}
     if (islower(c))
 	c = toupper(c);

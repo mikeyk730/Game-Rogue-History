@@ -2,10 +2,17 @@
  * All the fighting gets done here
  *
  * @(#)fight.c	3.28 (Berkeley) 6/15/81
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 #include "curses.h"
 #include <ctype.h>
+#include <string.h>
 #include "rogue.h"
 
 long e_levels[] = {
@@ -31,7 +38,10 @@ bool thrown;
      * Find the monster we want to fight
      */
     if ((item = find_mons(mp->y, mp->x)) == NULL)
+    {
 	debug("Fight what @ %d,%d", mp->y, mp->x);
+	return(0);
+    }
     tp = (struct thing *) ldata(item);
     /*
      * Since we are fighting, things are not quiet so no healing takes
@@ -207,7 +217,7 @@ register struct thing *mp;
 		    if (purse != lastpurse)
 			msg("Your purse feels lighter");
 		    remove_monster(&mp->t_pos, find_mons(mp->t_pos.y, mp->t_pos.x));
-                    mp = NULL;
+		    mp = NULL;
 		}
 		when 'N':
 		{
@@ -223,8 +233,12 @@ register struct thing *mp;
 		    for (nobj = 0, list = pack; list != NULL; list = next(list))
 		    {
 			obj = (struct object *) ldata(list);
-			if (obj != cur_armor && obj != cur_weapon &&
-			    is_magic(obj) && rnd(++nobj) == 0)
+			if (obj != cur_armor && 
+                            obj != cur_weapon &&
+                            obj != cur_ring[LEFT] &&
+                            obj != cur_ring[RIGHT] && /* Nymph bug fix */
+			    is_magic(obj) && 
+                            rnd(++nobj) == 0)
 				steal = list;
 		    }
 		    if (steal != NULL)
@@ -233,15 +247,15 @@ register struct thing *mp;
 
 			obj = (struct object *) ldata(steal);
 			remove_monster(&mp->t_pos, find_mons(mp->t_pos.y, mp->t_pos.x));
-                        mp = NULL;
+			mp = NULL;
 			if (obj->o_count > 1 && obj->o_group == 0)
 			{
 			    register int oc;
 
-			    oc = obj->o_count--;
+			    oc = obj->o_count;
 			    obj->o_count = 1;
 			    msg("She stole %s!", inv_name(obj, TRUE));
-			    obj->o_count = oc;
+			    obj->o_count = oc - 1;
 			}
 			else
 			{
@@ -337,7 +351,6 @@ bool hurl;
     register int ndice, nsides, def_arm;
     register bool did_hit = FALSE;
     register int prop_hplus, prop_dplus;
-    char *index();
 
     prop_hplus = prop_dplus = 0;
     if (weap == NULL)
@@ -383,7 +396,7 @@ bool hurl;
 		hplus += cur_ring[RIGHT]->o_ac;
 	}
 	ndice = atoi(cp);
-	if ((cp = index(cp, 'd')) == NULL)
+	if ((cp = strchr(cp, 'd')) == NULL)
 	    break;
 	nsides = atoi(++cp);
 	if (def == &pstats)
@@ -410,7 +423,7 @@ bool hurl;
 	    def->s_hpt -= max(0, damage);
 	    did_hit = TRUE;
 	}
-	if ((cp = index(cp, '/')) == NULL)
+	if ((cp = strchr(cp, '/')) == NULL)
 	    break;
 	cp++;
     }
@@ -508,6 +521,7 @@ struct thing *tp;
     need = 14 + which - tp->t_stats.s_lvl / 2;
     return (roll(1, 20) >= need);
 }
+
 /*
  * save:
  *	See if he saves against various nasty things
@@ -710,10 +724,6 @@ bool pr;
      * Empty the monsters pack
      */
     pitem = tp->t_pack;
-    /*
-     * Get rid of the monster.
-     */
-    remove_monster(&tp->t_pos, item);
     while (pitem != NULL)
     {
 	register struct object *obj;
@@ -725,4 +735,8 @@ bool pr;
 	fall(pitem, FALSE);
 	pitem = nexti;
     }
+    /*
+     * Get rid of the monster.
+     */
+    remove_monster(&tp->t_pos, item);
 }

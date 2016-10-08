@@ -3,10 +3,17 @@
  * while wandering around the dungeon.
  *
  * @(#)sticks.c	3.14 (Berkeley) 6/15/81
+ *
+ * Rogue: Exploring the Dungeons of Doom
+ * Copyright (C) 1980, 1981 Michael Toy, Ken Arnold and Glenn Wichman
+ * All rights reserved.
+ *
+ * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
 #include "curses.h"
 #include <ctype.h>
+#include <string.h>
 #include "rogue.h"
 
 fix_stick(cur)
@@ -176,9 +183,9 @@ bool gotdir;
 		&& !save_throw(VS_MAGIC, ldata(find_mons(unc(bolt.o_pos)))))
 		    hit_monster(unc(bolt.o_pos), &bolt);
 	    else if (terse)
-		msg("Missle vanishes");
+		msg("Missile vanishes");
 	    else
-		msg("The missle vanishes with a puff of smoke");
+		msg("The missile vanishes with a puff of smoke");
 	    ws_know[WS_MISSILE] = TRUE;
 	}
 	when WS_HIT:
