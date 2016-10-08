@@ -8,10 +8,11 @@
  * @(#)main.c	4.22 (Berkeley) 02/05/99
  */
 
-#include <curses.h>
-#ifdef	attron
-#endif	/* attron */
+#include <stdlib.h>
+#include <string.h>
 #include <signal.h>
+#include <time.h>
+#include <curses.h>
 #include "rogue.h"
 
 /*
@@ -26,30 +27,6 @@ main(int argc, char **argv, char **envp)
 
     md_init();
 
-#ifndef DUMP
-#ifdef SIGQUIT
-    signal(SIGQUIT, exit);
-#endif
-    signal(SIGILL, exit);
-#ifdef SIGTRAP
-    signal(SIGTRAP, exit);
-#endif
-#ifdef SIGIOT
-    signal(SIGIOT, exit);
-#endif
-#ifdef SIGEMT
-    signal(SIGEMT, exit);
-#endif
-    signal(SIGFPE, exit);
-#ifdef SIGBUS
-    signal(SIGBUS, exit);
-#endif
-    signal(SIGSEGV, exit);
-#ifdef SIGSYS
-    signal(SIGSYS, exit);
-#endif
-#endif
-
 #ifdef MASTER
     /*
      * Check to see if he is a wizard
@@ -62,6 +39,7 @@ main(int argc, char **argv, char **envp)
 	    argv++;
 	    argc--;
 	}
+
 #endif
 
     /*
@@ -76,25 +54,36 @@ main(int argc, char **argv, char **envp)
     if ((env = getenv("ROGUEOPTS")) != NULL)
 	parse_opts(env);
     if (env == NULL || whoami[0] == '\0')
-        strucpy(whoami, md_getusername(), strlen(md_getusername()));
+        strucpy(whoami, md_getusername(), (int) strlen(md_getusername()));
     lowtime = (int) time(NULL);
 #ifdef MASTER
     if (wizard && getenv("SEED") != NULL)
 	dnum = atoi(getenv("SEED"));
     else
 #endif
-	dnum = lowtime + getpid();
+	dnum = lowtime + md_getpid();
     seed = dnum;
+
+    open_score();
+
+	/* 
+     * Drop setuid/setgid after opening the scoreboard file. 
+     */ 
+
+    md_normaluser();
 
     /*
      * check for print-score option
      */
-    open_score();
+
+	md_normaluser(); /* we drop any setgid/setuid priveldges here */
+
     if (argc == 2)
+    {
 	if (strcmp(argv[1], "-s") == 0)
 	{
 	    noscore = TRUE;
-	    score(0, -1);
+	    score(0, -1, 0);
 	    exit(0);
 	}
 	else if (strcmp(argv[1], "-d") == 0)
@@ -109,6 +98,7 @@ main(int argc, char **argv, char **envp)
 	    death(death_monst());
 	    exit(0);
 	}
+    }
 
     init_check();			/* check for legal startup */
     if (argc == 2)
@@ -145,10 +135,8 @@ main(int argc, char **argv, char **envp)
      * Set up windows
      */
     hw = newwin(LINES, COLS, 0, 0);
-#ifdef	attron
     idlok(stdscr, TRUE);
     idlok(hw, TRUE);
-#endif	/* attron */
 #ifdef MASTER
     noscore = wizard;
 #endif
@@ -161,6 +149,7 @@ main(int argc, char **argv, char **envp)
     fuse(swander, 0, WANDERTIME, AFTER);
     start_daemon(stomach, 0, AFTER);
     playit();
+    return(0);
 }
 
 /*
@@ -171,6 +160,7 @@ main(int argc, char **argv, char **envp)
 void
 endit(int sig)
 {
+    NOOP(sig);
     fatal("Okay, bye bye!\n");
 }
 
@@ -179,6 +169,7 @@ endit(int sig)
  *	Exit the program, printing a message.
  */
 
+void
 fatal(char *s)
 {
     mvaddstr(LINES - 2, 0, s);
@@ -211,16 +202,18 @@ roll(int number, int sides)
     return dtotal;
 }
 
-#ifdef SIGTSTP
 /*
  * tstp:
  *	Handle stop and start signals
  */
 
+void
 tstp(int ignored)
 {
     int y, x;
     int oy, ox;
+
+	NOOP(ignored);
 
     /*
      * leave nicely
@@ -230,12 +223,12 @@ tstp(int ignored)
     endwin();
     resetltchars();
     fflush(stdout);
-    kill(0, SIGTSTP);		/* send actual signal and suspend process */
+	md_tstpsignal();
 
     /*
      * start back up again
      */
-    signal(SIGTSTP, tstp);
+	md_tstpresume();
     raw();
     noecho();
     keypad(stdscr,1);
@@ -244,11 +237,13 @@ tstp(int ignored)
     wrefresh(curscr);
     getyx(curscr, y, x);
     mvcur(y, x, oy, ox);
-    fflush(stdout);
-    curscr->_cury = oy;
-    curscr->_curx = ox;
+    fflush(stdout);       
+    
+    // fix by Patrick Mueller 2014-01-17 - replace cursrc->_* with wmove()
+    // curscr->_cury = oy;
+    // curscr->_curx = ox;
+    wmove(curscr, oy, ox);
 }
-#endif
 
 /*
  * playit:
@@ -256,6 +251,7 @@ tstp(int ignored)
  *	refreshing things and looking at the proper times.
  */
 
+void
 playit()
 {
     char *opts;
@@ -264,11 +260,7 @@ playit()
      * set up defaults for slow terminals
      */
 
-#ifndef	attron
-    if (_tty.sg_ospeed <= B1200)
-#else	/* attron */
     if (baudrate() <= 1200)
-#endif	/* attron */
     {
 	terse = TRUE;
 	jump = TRUE;
@@ -302,6 +294,8 @@ quit(int sig)
 {
     int oy, ox;
 
+    NOOP(sig);
+
     /*
      * Reset the signal in case we got here via an interrupt
      */
@@ -316,7 +310,7 @@ quit(int sig)
 	mvprintw(LINES - 2, 0, "You quit with %d gold pieces", purse);
 	move(LINES - 1, 0);
 	refresh();
-	score(purse, 1);
+	score(purse, 1, 0);
 	my_exit(0);
     }
     else
@@ -342,16 +336,16 @@ leave(int sig)
 {
     static char buf[BUFSIZ];
 
+    NOOP(sig);
+
     setbuf(stdout, buf);	/* throw away pending output */
-#ifndef	attron
-    if (!_endwin)
+
+    if (!isendwin())
     {
 	mvcur(0, COLS - 1, LINES - 1, 0);
 	endwin();
     }
-#else	/* attron */
-    endwin();
-#endif	/* attron */
+
     putchar('\n');
     my_exit(0);
 }
@@ -361,10 +355,9 @@ leave(int sig)
  *	Let them escape for a while
  */
 
+void
 shell()
 {
-    char *sh;
-
     /*
      * Set the terminal back to original mode
      */
@@ -375,7 +368,6 @@ shell()
     putchar('\n');
     in_shell = TRUE;
     after = FALSE;
-    sh = getenv("SHELL");
     fflush(stdout);
     /*
      * Fork and do a shell
@@ -398,6 +390,7 @@ shell()
  *	Leave the process properly
  */
 
+void
 my_exit(int st)
 {
     resetltchars();

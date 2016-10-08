@@ -12,6 +12,7 @@
  */
 
 #include <curses.h>
+#include <string.h>
 #include <ctype.h>
 #include "rogue.h"
 
@@ -20,6 +21,7 @@
  *	Set up a new stick
  */
 
+void
 fix_stick(THING *cur)
 {
     if (strcmp(ws_type[cur->o_which], "staff") == 0)
@@ -42,13 +44,13 @@ fix_stick(THING *cur)
  *	Perform a zap with a wand
  */
 
+void
 do_zap()
 {
     THING *obj, *tp;
     int y, x;
     char *name;
     char monster, oldch;
-    char omonst;
     static THING bolt;
 
     if ((obj = get_item("zap with", STICK)) == NULL)
@@ -112,7 +114,7 @@ do_zap()
 	    }
 	    if ((tp = moat(y, x)) != NULL)
 	    {
-		omonst = monster = tp->t_type;
+		monster = tp->t_type;
 		if (monster == 'F')
 		    player.t_flags &= ~ISHELD;
 		switch (obj->o_which) {
@@ -132,7 +134,7 @@ do_zap()
 			oldch = tp->t_oldch;
 			delta.y = y;
 			delta.x = x;
-			new_monster(tp, monster = rnd(26) + 'A', &delta);
+			new_monster(tp, monster = (char)(rnd(26) + 'A'), &delta);
 			if (see_monst(tp))
 			    mvaddch(y, x, monster);
 			tp->t_oldch = oldch;
@@ -243,6 +245,7 @@ do_zap()
  *	Do drain hit points from player shtick
  */
 
+void
 drain()
 {
     THING *mp;
@@ -260,14 +263,14 @@ drain()
 	corp = &passages[flat(hero.y, hero.x) & F_PNUM];
     else
 	corp = NULL;
-    inpass = (proom->r_flags & ISGONE);
+    inpass = (bool)(proom->r_flags & ISGONE);
     dp = drainee;
     for (mp = mlist; mp != NULL; mp = next(mp))
 	if (mp->t_room == proom || mp->t_room == corp ||
 	    (inpass && chat(mp->t_pos.y, mp->t_pos.x) == DOOR &&
 	    &passages[flat(mp->t_pos.y, mp->t_pos.x) & F_PNUM] == proom))
 		*dp++ = mp;
-    if ((cnt = dp - drainee) == 0)
+    if ((cnt = (int)(dp - drainee)) == 0)
     {
 	msg("you have a tingling feeling");
 	return;
@@ -293,6 +296,7 @@ drain()
  *	Fire a bolt in a given direction from a specific starting place
  */
 
+void
 fire_bolt(coord *start, coord *dir, char *name)
 {
     coord *c1, *c2;
@@ -316,10 +320,10 @@ fire_bolt(coord *start, coord *dir, char *name)
 	when 2: case -2: dirch = '\\';
     }
     pos = *start;
-    hit_hero = (start != &hero);
+    hit_hero = (bool)(start != &hero);
     used = FALSE;
     changed = FALSE;
-    for (c1 = spotpos; c1 < &spotpos[BOLT_LENGTH] && !used; c1++)
+    for (c1 = spotpos; c1 <= &spotpos[BOLT_LENGTH-1] && !used; c1++)
     {
 	pos.y += dir->y;
 	pos.x += dir->x;
@@ -385,10 +389,12 @@ def:
 		    if (!save(VS_MAGIC))
 		    {
 			if ((pstats.s_hpt -= roll(6, 6)) <= 0)
+			{
 			    if (start == &hero)
 				death('b');
 			    else
 				death(moat(start->y, start->x)->t_type);
+			}
 			used = TRUE;
 			if (terse)
 			    msg("the %s hits", name);

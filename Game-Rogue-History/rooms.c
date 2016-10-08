@@ -27,6 +27,7 @@ typedef struct spot {		/* position matrix for maze positions */
  *	Create rooms and corridors with a connectivity graph
  */
 
+void
 do_rooms()
 {
     int i;
@@ -148,6 +149,7 @@ do_rooms()
  *	rooms; for maze rooms, draw maze.
  */
 
+void
 draw_room(struct room *rp)
 {
     int y, x;
@@ -175,6 +177,7 @@ draw_room(struct room *rp)
  *	Draw a vertical line
  */
 
+void
 vert(struct room *rp, int startx)
 {
     int y;
@@ -188,6 +191,7 @@ vert(struct room *rp, int startx)
  *	Draw a horizontal line
  */
 
+void
 horiz(struct room *rp, int starty)
 {
     int x;
@@ -206,13 +210,14 @@ static int	Maxy, Maxx, Starty, Startx;
 static SPOT	maze[NUMLINES/3+1][NUMCOLS/3+1];
 
 
+void
 do_maze(struct room *rp)
 {
     SPOT *sp;
     int starty, startx;
     static coord pos;
 
-    for (sp = &maze[0][0]; sp < &maze[NUMLINES / 3][NUMCOLS / 3 + 1]; sp++)
+    for (sp = &maze[0][0]; sp <= &maze[NUMLINES / 3][NUMCOLS / 3]; sp++)
     {
 	sp->used = FALSE;
 	sp->nexits = 0;
@@ -235,6 +240,7 @@ do_maze(struct room *rp)
  *	Dig out from around where we are now, if possible
  */
 
+void
 dig(int y, int x)
 {
     coord *cp;
@@ -247,7 +253,7 @@ dig(int y, int x)
     for (;;)
     {
 	cnt = 0;
-	for (cp = del; cp < &del[4]; cp++)
+	for (cp = del; cp <= &del[3]; cp++)
 	{
 	    newy = y + cp->y;
 	    newx = x + cp->x;
@@ -294,6 +300,7 @@ dig(int y, int x)
  *	Account for maze exits
  */
 
+void
 accnt_maze(int y, int x, int ny, int nx)
 {
     SPOT *sp;
@@ -312,6 +319,7 @@ accnt_maze(int y, int x, int ny, int nx)
  *	Pick a random spot in a room
  */
 
+void
 rnd_pos(struct room *rp, coord *cp)
 {
     cp->x = rp->r_pos.x + rnd(rp->r_max.x - 2) + 1;
@@ -331,7 +339,9 @@ find_floor(struct room *rp, coord *cp, int limit, bool monst)
     char compchar = 0;
     bool pickroom;
 
-    if (!(pickroom = (rp == NULL)))
+    pickroom = (bool)(rp == NULL);
+
+    if (!pickroom)
 	compchar = ((rp->r_flags & ISMAZE) ? PASSAGE : FLOOR);
     cnt = limit;
     for (;;)
@@ -360,12 +370,13 @@ find_floor(struct room *rp, coord *cp, int limit, bool monst)
  *	Code that is executed whenver you appear in a room
  */
 
+void
 enter_room(coord *cp)
 {
     struct room *rp;
     THING *tp;
     int y, x;
-    chtype ch;
+    char ch;
 
     rp = proom = roomin(cp);
     door_open(rp);
@@ -378,7 +389,7 @@ enter_room(coord *cp)
 		tp = moat(y, x);
 		ch = chat(y, x);
 		if (tp == NULL)
-		    if (inch() != ch)
+		    if (CCHAR(inch()) != ch)
 			addch(ch);
 		    else
 			move(y, x + 1);
@@ -406,6 +417,7 @@ enter_room(coord *cp)
  *	Code for when we exit a room
  */
 
+void
 leave_room(coord *cp)
 {
     PLACE *pp;
@@ -431,7 +443,7 @@ leave_room(coord *cp)
 	for (x = rp->r_pos.x; x < rp->r_max.x + rp->r_pos.x; x++)
 	{
 	    move(y, x);
-	    switch (ch = inch())
+	    switch ( ch = CCHAR(inch()) )
 	    {
 		case FLOOR:
 		    if (floor == ' ' && ch != ' ')

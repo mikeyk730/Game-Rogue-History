@@ -10,6 +10,8 @@
  * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
+#include <stdlib.h>
+#include <string.h>
 #include <curses.h>
 #include <ctype.h>
 #include "rogue.h"
@@ -18,6 +20,7 @@
  * command:
  *	Process the user commands
  */
+void
 command()
 {
     register char ch;
@@ -163,7 +166,7 @@ over:
 			if (levit_check())
 			    ;
 			else
-			    pick_up(obj->o_type);
+			    pick_up((char)obj->o_type);
 		    }
 		    else {
 			if (!terse)
@@ -219,8 +222,8 @@ over:
 		    }
 		    delta.y += hero.y;
 		    delta.x += hero.x;
-		    if (((mp = moat(delta.y, delta.x)) == NULL
-			|| (!see_monst(mp)) && !on(player, SEEMONST)))
+		    if ( ((mp = moat(delta.y, delta.x)) == NULL)
+			|| ((!see_monst(mp)) && !on(player, SEEMONST)))
 		    {
 			if (!terse)
 			    addmsg("I see ");
@@ -322,7 +325,8 @@ over:
 		    }
 		    else
 		    {
-			if (wizard = passwd()) 
+			wizard = passwd();
+			if (wizard) 
 			{
 			    noscore = TRUE;
 			    turn_see(FALSE);
@@ -453,8 +457,8 @@ over:
  * illcom:
  *	What to do with an illegal command
  */
-illcom(ch)
-int ch;
+void
+illcom(int ch)
 {
     save_msg = FALSE;
     count = 0;
@@ -466,6 +470,7 @@ int ch;
  * search:
  *	player gropes about him to find hidden things.
  */
+void
 search()
 {
     register int y, x;
@@ -529,6 +534,7 @@ foundone:
  * help:
  *	Give single character help, or the whole mess if he wants it
  */
+void
 help()
 {
     register struct h_list *strp;
@@ -598,31 +604,32 @@ help()
  * identify:
  *	Tell the player what a certain thing is.
  */
+void
 identify()
 {
     register int ch;
     register struct h_list *hp;
     register char *str;
     static struct h_list ident_list[] = {
-	'|',		"wall of a room",		FALSE,
-	'-',		"wall of a room",		FALSE,
-	GOLD,		"gold",				FALSE,
-	STAIRS,		"a staircase",			FALSE,
-	DOOR,		"door",				FALSE,
-	FLOOR,		"room floor",			FALSE,
-	PLAYER,		"you",				FALSE,
-	PASSAGE,	"passage",			FALSE,
-	TRAP,		"trap",				FALSE,
-	POTION,		"potion",			FALSE,
-	SCROLL,		"scroll",			FALSE,
-	FOOD,		"food",				FALSE,
-	WEAPON,		"weapon",			FALSE,
-	' ',		"solid rock",			FALSE,
-	ARMOR,		"armor",			FALSE,
-	AMULET,		"the Amulet of Yendor",		FALSE,
-	RING,		"ring",				FALSE,
-	STICK,		"wand or staff",		FALSE,
-	'\0'
+	{'|',		"wall of a room",		FALSE},
+	{'-',		"wall of a room",		FALSE},
+	{GOLD,		"gold",				FALSE},
+	{STAIRS,	"a staircase",			FALSE},
+	{DOOR,		"door",				FALSE},
+	{FLOOR,		"room floor",			FALSE},
+	{PLAYER,	"you",				FALSE},
+	{PASSAGE,	"passage",			FALSE},
+	{TRAP,		"trap",				FALSE},
+	{POTION,	"potion",			FALSE},
+	{SCROLL,	"scroll",			FALSE},
+	{FOOD,		"food",				FALSE},
+	{WEAPON,	"weapon",			FALSE},
+	{' ',		"solid rock",			FALSE},
+	{ARMOR,		"armor",			FALSE},
+	{AMULET,	"the Amulet of Yendor",		FALSE},
+	{RING,		"ring",				FALSE},
+	{STICK,		"wand or staff",		FALSE},
+	{'\0'}
     };
 
     msg("what do you want identified? ");
@@ -652,6 +659,7 @@ identify()
  * d_level:
  *	He wants to go down a level
  */
+void
 d_level()
 {
     if (levit_check())
@@ -670,6 +678,7 @@ d_level()
  * u_level:
  *	He wants to go up a level
  */
+void
 u_level()
 {
     if (levit_check())
@@ -707,6 +716,7 @@ levit_check()
  * call:
  *	Allow a user to call a potion, scroll, or ring something
  */
+void
 call()
 {
     register THING *obj;
@@ -755,7 +765,7 @@ norm:
 	msg("that has already been identified");
 	return;
     }
-    if (elsewise != NULL && elsewise == op->oi_guess)
+    if (elsewise != NULL && elsewise == *guess)
     {
 	if (!terse)
 	    addmsg("Was ");
@@ -783,10 +793,8 @@ norm:
  * current:
  *	Print the current weapon/armor
  */
-current(cur,how,where)
-register THING *cur;
-register char *how;
-register char *where;
+void
+current(THING *cur, char *how, char *where)
 {
     after = FALSE;
     if (cur != NULL)

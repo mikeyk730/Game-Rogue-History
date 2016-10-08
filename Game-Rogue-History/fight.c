@@ -10,6 +10,7 @@
  * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
+#include <stdlib.h>
 #include <curses.h>
 #include <string.h>
 #include <ctype.h>
@@ -59,10 +60,8 @@ static int add_dam[] = {
  * fight:
  *	The player attacks the monster.
  */
-fight(mp, weap, thrown)
-register coord *mp;
-register THING *weap;
-bool thrown;
+int
+fight(coord *mp, THING *weap, bool thrown)
 {
     register THING *tp;
     register bool did_hit = TRUE;
@@ -92,7 +91,7 @@ bool thrown;
     {
 	tp->t_disguise = 'X';
 	if (on(player, ISHALU)) {
-	    ch = rnd(26) + 'A';
+	    ch = (char)(rnd(26) + 'A');
 	    mvaddch(tp->t_pos.y, tp->t_pos.x, ch);
 	}
 	msg(choose_str("heavy!  That's a nasty critter!",
@@ -137,8 +136,8 @@ bool thrown;
  * attack:
  *	The monster attacks the player
  */
-attack(mp)
-register THING *mp;
+int
+attack(THING *mp)
 {
     register char *mname;
     register int oldhp;
@@ -213,6 +212,7 @@ register THING *mp;
 		     * Rattlesnakes have poisonous bites
 		     */
 		    if (!save(VS_POISON))
+		    {
 			if (!ISWEARING(R_SUSTSTR))
 			{
 			    chg_str(-1);
@@ -222,10 +222,13 @@ register THING *mp;
 				msg("a bite has weakened you");
 			}
 			else if (!to_death)
+			{
 			    if (!terse)
 				msg("a bite momentarily weakens you");
 			    else
 				msg("bite has no effect");
+			}
+		    }
 		when 'W':
 		case 'V':
 		    /*
@@ -272,7 +275,7 @@ register THING *mp;
 		    /*
 		     * Leperachaun steals some gold
 		     */
-		    register long lastpurse;
+		    register int lastpurse;
 
 		    lastpurse = purse;
 		    purse -= GOLDCALC;
@@ -343,8 +346,7 @@ register THING *mp;
  *	return the monster name for the given monster
  */
 char *
-set_mname(tp)
-register THING *tp;
+set_mname(THING *tp)
 {
     int ch;
     char *mname;
@@ -372,8 +374,8 @@ register THING *tp;
  * swing:
  *	Returns true if the swing hits
  */
-swing(at_lvl, op_arm, wplus)
-int at_lvl, op_arm, wplus;
+int
+swing(int at_lvl, int op_arm, int wplus)
 {
     int res = rnd(20);
     int need = (20 - at_lvl) - op_arm;
@@ -386,9 +388,7 @@ int at_lvl, op_arm, wplus;
  *	Roll several attacks
  */
 bool
-roll_em(thatt, thdef, weap, hurl)
-THING *thatt, *thdef, *weap;
-bool hurl;
+roll_em(THING *thatt, THING *thdef, THING *weap, bool hurl)
 {
     register struct stats *att, *def;
     register char *cp;
@@ -423,6 +423,7 @@ bool hurl;
 	}
 	cp = weap->o_damage;
 	if (hurl)
+	{
 	    if ((weap->o_flags&ISMISL) && cur_weapon != NULL &&
 	      cur_weapon->o_which == weap->o_launch)
 	    {
@@ -432,6 +433,7 @@ bool hurl;
 	    }
 	    else if (weap->o_launch < 0)
 		cp = weap->o_hurldmg;
+	}
     }
     /*
      * If the creature being attacked is not running (alseep or held)
@@ -480,9 +482,7 @@ bool hurl;
  *	The print name of a combatant
  */
 char *
-prname(mname, upper)
-register char *mname;
-bool upper;
+prname(char *mname, bool upper)
 {
     static char tbuf[MAXSTR];
 
@@ -492,7 +492,7 @@ bool upper;
     else
 	strcpy(tbuf, mname);
     if (upper)
-	*tbuf = toupper(*tbuf);
+	*tbuf = (char) toupper(*tbuf);
     return tbuf;
 }
 
@@ -500,10 +500,8 @@ bool upper;
  * thunk:
  *	A missile hits a monster
  */
-thunk(weap, mname, noend)
-register THING *weap;
-register char *mname;
-register bool noend;
+void
+thunk(THING *weap, char *mname, bool noend)
 {
     if (to_death)
 	return;
@@ -521,9 +519,8 @@ register bool noend;
  *	Print a message to indicate a succesful hit
  */
 
-hit(er, ee, noend)
-register char *er, *ee;
-bool noend;
+void
+hit(char *er, char *ee, bool noend)
 {
     int i;
     char *s;
@@ -552,9 +549,8 @@ bool noend;
  * miss:
  *	Print a message to indicate a poor swing
  */
-miss(er, ee, noend)
-register char *er, *ee;
-bool noend;
+void
+miss(char *er, char *ee, bool noend)
 {
     int i;
     extern char *m_names[];
@@ -579,10 +575,8 @@ bool noend;
  * bounce:
  *	A missile misses a monster
  */
-bounce(weap, mname, noend)
-register THING *weap;
-register char *mname;
-bool noend;
+void
+bounce(THING *weap, char *mname, bool noend)
 {
     if (to_death)
 	return;
@@ -599,10 +593,8 @@ bool noend;
  * remove_mon:
  *	Remove a monster from the screen
  */
-remove_mon(mp, tp, waskill)
-register coord *mp;
-register THING *tp;
-bool waskill;
+void
+remove_mon(coord *mp, THING *tp, bool waskill)
 {
     register THING *obj, *nexti;
 
@@ -633,9 +625,8 @@ bool waskill;
  * killed:
  *	Called to put a monster to death
  */
-killed(tp, pr)
-register THING *tp;
-bool pr;
+void
+killed(THING *tp, bool pr)
 {
     char *mname;
 

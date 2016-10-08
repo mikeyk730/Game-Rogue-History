@@ -17,7 +17,7 @@
 typedef struct
 {
     int pa_flags;
-    int (*pa_daemon)();
+    void (*pa_daemon)();
     int pa_time;
     char *pa_high, *pa_straight;
 } PACT;
@@ -55,6 +55,7 @@ static PACT p_actions[] =
  *	Quaff a potion from the pack
  */
 
+void
 quaff()
 {
     THING *obj, *tp, *mp;
@@ -82,7 +83,7 @@ quaff()
      * Calculate the effect it has on the poor guy.
      */
     trip = on(player, ISHALU);
-    discardit = (obj->o_count == 1);
+    discardit = (bool)(obj->o_count == 1);
     leave_pack(obj, FALSE, FALSE);
     switch (obj->o_which)
     {
@@ -110,7 +111,7 @@ quaff()
 	    msg("you feel stronger, now.  What bulging muscles!");
 	when P_MFIND:
 	    player.t_flags |= SEEMONST;
-	    fuse(turn_see, TRUE, HUHDURATION, AFTER);
+	    fuse((void(*)())turn_see, TRUE, HUHDURATION, AFTER);
 	    if (!turn_see(FALSE))
 		msg("you have a %s feeling for a moment, then it passes",
 		    choose_str("normal", "strange"));
@@ -233,9 +234,9 @@ is_magic(THING *obj)
     switch (obj->o_type)
     {
 	case ARMOR:
-	    return (obj->o_flags&ISPROT) || obj->o_arm != a_class[obj->o_which];
+	    return (bool)((obj->o_flags&ISPROT) || obj->o_arm != a_class[obj->o_which]);
 	case WEAPON:
-	    return obj->o_hplus != 0 || obj->o_dplus != 0;
+	    return (bool)(obj->o_hplus != 0 || obj->o_dplus != 0);
 	case POTION:
 	case SCROLL:
 	case STICK:
@@ -251,6 +252,7 @@ is_magic(THING *obj)
  *	Turn on the ability to see invisible
  */
 
+void
 invis_on()
 {
     THING *mp;
@@ -338,6 +340,7 @@ seen_stairs()
  *	The guy just magically went up a level.
  */
 
+void
 raise_level()
 {
     pstats.s_exp = e_levels[pstats.s_lvl-1] + 1L;
@@ -350,6 +353,7 @@ raise_level()
  *	turns on a flag
  */
 
+void
 do_pot(int type, bool knowit)
 {
     PACT *pp;

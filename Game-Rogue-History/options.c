@@ -12,18 +12,15 @@
  * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
+#include <stdlib.h>
 #include <curses.h>
 #include <ctype.h>
+#include <string.h>
 #include "rogue.h"
 
 #define	EQSTR(a, b, c)	(strncmp(a, b, c) == 0)
 
 #define	NUM_OPTS	(sizeof optlist / sizeof (OPTION))
-
-#ifndef attron
-# define	erasechar()	_tty.sg_erase
-# define	killchar()	_tty.sg_kill
-#endif
 
 /*
  * description of an option and what to do with it
@@ -31,38 +28,38 @@
 struct optstruct {
     char	*o_name;	/* option name */
     char	*o_prompt;	/* prompt for interactive entry */
-    int 	*o_opt;		/* pointer to thing to set */
+    void 	*o_opt;		/* pointer to thing to set */
 				/* function to print value */
-    int 	(*o_putfunc)(void *opt);
+    void 	(*o_putfunc)(void *opt);
 				/* function to get value interactively */
     int		(*o_getfunc)(void *opt, WINDOW *win);
 };
 
 typedef struct optstruct	OPTION;
 
-int	pr_optname(OPTION *op);
+void	pr_optname(OPTION *op);
 
 OPTION	optlist[] = {
     {"terse",	 "Terse output",
-		 (int *) &terse,	put_bool,	get_bool	},
+		 &terse,	put_bool,	get_bool	},
     {"flush",	 "Flush typeahead during battle",
-		(int *) &fight_flush,	put_bool,	get_bool	},
+		 &fight_flush,	put_bool,	get_bool	},
     {"jump",	 "Show position only at end of run",
-		(int *) &jump,		put_bool,	get_bool	},
+		 &jump,		put_bool,	get_bool	},
     {"seefloor", "Show the lamp-illuminated floor",
-		(int *) &see_floor,	put_bool,	get_sf		},
+		 &see_floor,	put_bool,	get_sf		},
     {"passgo",	"Follow turnings in passageways",
-		(int *) &passgo,	put_bool,	get_bool	},
+		 &passgo,	put_bool,	get_bool	},
     {"tombstone", "Print out tombstone when killed",
-		(int *) &tombstone,	put_bool,	get_bool	},
+		 &tombstone,	put_bool,	get_bool	},
     {"inven",	"Inventory style",
-		(int *) &inv_type,	put_inv_t,	get_inv_t	},
+		 &inv_type,	put_inv_t,	get_inv_t	},
     {"name",	 "Name",
-		(int *) whoami,		put_str,	get_str		},
+		 whoami,	put_str,	get_str		},
     {"fruit",	 "Fruit",
-		(int *) fruit,		put_str,	get_str		},
+		 fruit,		put_str,	get_str		},
     {"file",	 "Save file",
-		(int *) file_name,	put_str,	get_str		}
+		 file_name,	put_str,	get_str		}
 };
 
 /*
@@ -70,6 +67,7 @@ OPTION	optlist[] = {
  *	Print and then set options from the terminal
  */
 
+void
 option()
 {
     OPTION	*op;
@@ -79,7 +77,7 @@ option()
     /*
      * Display current values of options
      */
-    for (op = optlist; op < &optlist[NUM_OPTS]; op++)
+    for (op = optlist; op <= &optlist[NUM_OPTS-1]; op++)
     {
 	pr_optname(op);
 	(*op->o_putfunc)(op->o_opt);
@@ -89,14 +87,16 @@ option()
      * Set values
      */
     wmove(hw, 0, 0);
-    for (op = optlist; op < &optlist[NUM_OPTS]; op++)
+    for (op = optlist; op <= &optlist[NUM_OPTS-1]; op++)
     {
 	pr_optname(op);
-	if ((retval = (*op->o_getfunc)(op->o_opt, hw)))
+	retval = (*op->o_getfunc)(op->o_opt, hw);
+	if (retval)
+	{
 	    if (retval == QUIT)
 		break;
 	    else if (op > optlist) {	/* MINUS */
-		wmove(hw, (op - optlist) - 1, 0);
+		wmove(hw, (int)(op - optlist) - 1, 0);
 		op -= 2;
 	    }
 	    else	/* trying to back up beyond the top */
@@ -105,6 +105,7 @@ option()
 		wmove(hw, 0, 0);
 		op--;
 	    }
+	}
     }
     /*
      * Switch back to original screen
@@ -114,9 +115,7 @@ option()
     wrefresh(hw);
     wait_for(' ');
     clearok(curscr, TRUE);
-#ifdef attron
     touchwin(stdscr);
-#endif
     after = FALSE;
 }
 
@@ -125,6 +124,7 @@ option()
  *	Print out the option name prompt
  */
 
+void
 pr_optname(OPTION *op)
 {
     wprintw(hw, "%s (\"%s\"): ", op->o_prompt, op->o_name);
@@ -135,6 +135,7 @@ pr_optname(OPTION *op)
  *	Put out a boolean
  */
 
+void
 put_bool(void *b)
 {
     waddstr(hw, *(bool *) b ? "True" : "False");
@@ -145,6 +146,7 @@ put_bool(void *b)
  *	Put out a string
  */
 
+void
 put_str(void *str)
 {
     waddstr(hw, (char *) str);
@@ -155,6 +157,7 @@ put_str(void *str)
  *	Put out an inventory type
  */
 
+void
 put_inv_t(void *ip)
 {
     waddstr(hw, inv_t_name[*(int *) ip]);
@@ -248,8 +251,9 @@ get_str(void *vopt, WINDOW *win)
 {
     char *opt = (char *) vopt;
     char *sp;
-    int c, oy, ox;
+    int oy, ox;
     int i;
+    signed char c;
     static char buf[MAXSTR];
 
     getyx(win, oy, ox);
@@ -267,7 +271,7 @@ get_str(void *vopt, WINDOW *win)
 	    if (sp > buf)
 	    {
 		sp--;
-		for (i = strlen(unctrl(*sp)); i; i--)
+		for (i = (int) strlen(unctrl(*sp)); i; i--)
 		    waddch(win, '\b');
 	    }
 	    continue;
@@ -300,11 +304,11 @@ get_str(void *vopt, WINDOW *win)
     }
     *sp = '\0';
     if (sp > buf)	/* only change option if something has been typed */
-	strucpy(opt, buf, strlen(buf));
+	strucpy(opt, buf, (int) strlen(buf));
     mvwprintw(win, oy, ox, "%s\n", opt);
     wrefresh(win);
     if (win == stdscr)
-	mpos += sp - buf;
+	mpos += (int)(sp - buf);
     if (c == '-')
 	return MINUS;
     else if (c == ESCAPE)
@@ -379,7 +383,7 @@ get_num(void *vp, WINDOW *win)
     static char buf[MAXSTR];
 
     if ((i = get_str(buf, win)) == NORM)
-	*opt = atoi(buf);
+	*opt = (short) atoi(buf);
     return i;
 }
 #endif
@@ -393,6 +397,7 @@ get_num(void *vp, WINDOW *win)
  *	or the end of the entire option string.
  */
 
+void
 parse_opts(char *str)
 {
     char *sp;
@@ -408,11 +413,11 @@ parse_opts(char *str)
 	 */
 	for (sp = str; isalpha(*sp); sp++)
 	    continue;
-	len = sp - str;
+	len = (int)(sp - str);
 	/*
 	 * Look it up and deal with it
 	 */
-	for (op = optlist; op < &optlist[NUM_OPTS]; op++)
+	for (op = optlist; op <= &optlist[NUM_OPTS-1]; op++)
 	    if (EQSTR(str, op->o_name, len))
 	    {
 		if (op->o_putfunc == put_bool)	/* if option is a boolean */
@@ -444,16 +449,16 @@ parse_opts(char *str)
 		    if (op->o_putfunc == put_inv_t)
 		    {
 			if (islower(*str))
-			    *str = toupper(*str);
+			    *str = (char) toupper(*str);
 			for (i = inv_t_name; i <= &inv_t_name[INV_CLEAR]; i++)
 			    if (strncmp(str, *i, sp - str) == 0)
 			    {
-				inv_type = i - inv_t_name;
+				inv_type = (int)(i - inv_t_name);
 				break;
 			    }
 		    }
 		    else
-			strucpy(start, str, sp - str);
+			strucpy(start, str, (int)(sp - str));
 		}
 		break;
 	    }
@@ -481,6 +486,7 @@ parse_opts(char *str)
  *	Copy string using unctrl for things
  */
 
+void
 strucpy(char *s1, char *s2, int len)
 {
     if (len > MAXINP)

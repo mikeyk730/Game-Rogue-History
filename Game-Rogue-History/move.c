@@ -25,6 +25,7 @@ coord nh;
  *	Start the hero running
  */
 
+void
 do_run(char ch)
 {
     running = TRUE;
@@ -38,6 +39,7 @@ do_run(char ch)
  * consequences (fighting, picking up, etc.)
  */
 
+void
 do_move(int dy, int dx)
 {
     char ch, fl;
@@ -114,8 +116,8 @@ hit_bound:
 		{
 		    case 'h':
 		    case 'l':
-			b1 = (hero.y != 1 && turn_ok(hero.y - 1, hero.x));
-			b2 = (hero.y != NUMLINES - 2 && turn_ok(hero.y + 1, hero.x));
+			b1 = (bool)(hero.y != 1 && turn_ok(hero.y - 1, hero.x));
+			b2 = (bool)(hero.y != NUMLINES - 2 && turn_ok(hero.y + 1, hero.x));
 			if (!(b1 ^ b2))
 			    break;
 			if (b1)
@@ -133,8 +135,8 @@ hit_bound:
 			goto over;
 		    case 'j':
 		    case 'k':
-			b1 = (hero.x != 0 && turn_ok(hero.y, hero.x - 1));
-			b2 = (hero.x != NUMCOLS - 1 && turn_ok(hero.y, hero.x + 1));
+			b1 = (bool)(hero.x != 0 && turn_ok(hero.y, hero.x - 1));
+			b2 = (bool)(hero.x != NUMCOLS - 1 && turn_ok(hero.y, hero.x + 1));
 			if (!(b1 ^ b2))
 			    break;
 			if (b1)
@@ -217,6 +219,7 @@ turn_ok(int y, int x)
  *	Decide whether to refresh at a passage turning or not
  */
 
+void
 turnref()
 {
     PLACE *pp;
@@ -240,6 +243,7 @@ turnref()
  *	that might move.
  */
 
+void
 door_open(struct room *rp)
 {
     int y, x;
@@ -286,8 +290,8 @@ be_trapped(coord *tc)
                 when 1: msg("the light in here suddenly seems %s", rainbow[rnd(cNCOLORS)]);
                 when 2: msg("you feel a sting in the side of your neck");
                 when 3: msg("multi-colored lines swirl around you, then fade");
-                when 4: msg("a %s light flashes in your eyes");
-                when 5: msg("a spike shoots past your ear!", rainbow[rnd(cNCOLORS)]);
+                when 4: msg("a %s light flashes in your eyes", rainbow[rnd(cNCOLORS)]);
+                when 5: msg("a spike shoots past your ear!");
                 when 6: msg("%s sparks dance across your armor", rainbow[rnd(cNCOLORS)]);
                 when 7: msg("you suddenly feel very thirsty");
                 when 8: msg("you feel time speed up suddenly");
@@ -398,6 +402,7 @@ bad:
  *	aren't wearing a magic ring.
  */
 
+void
 rust_armor(THING *arm)
 {
     if (arm == NULL || arm->o_type != ARMOR || arm->o_which == LEATHER ||

@@ -12,12 +12,14 @@
  */
 
 #include <curses.h>
+#include <string.h>
 #include "rogue.h"
 
 #define TREAS_ROOM 20	/* one chance in TREAS_ROOM for a treasure room */
 #define MAXTREAS 10	/* maximum number of treasures in a treasure room */
 #define MINTREAS 2	/* minimum number of treasures in a treasure room */
 
+void
 new_level()
 {
     THING *tp;
@@ -118,6 +120,7 @@ rnd_room()
  *	Put potions and scrolls on this level
  */
 
+void
 put_things()
 {
     int i;
@@ -149,7 +152,7 @@ put_things()
 	     * Put it somewhere
 	     */
 	    find_floor((struct room *) NULL, &obj->o_pos, FALSE, FALSE);
-	    chat(obj->o_pos.y, obj->o_pos.x) = obj->o_type;
+	    chat(obj->o_pos.y, obj->o_pos.x) = (char) obj->o_type;
 	}
     /*
      * If he is really deep in the dungeon and he hasn't found the
@@ -180,6 +183,7 @@ put_things()
 #define MAXTRIES 10	/* max number of tries to put down a monster */
 
 
+void
 treas_room()
 {
     int nm;
@@ -199,7 +203,7 @@ treas_room()
 	tp = new_thing();
 	tp->o_pos = mp;
 	attach(lvl_obj, tp);
-	chat(mp.y, mp.x) = tp->o_type;
+	chat(mp.y, mp.x) = (char) tp->o_type;
     }
 
     /*

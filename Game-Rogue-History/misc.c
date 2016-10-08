@@ -10,19 +10,24 @@
  * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
+#include <stdlib.h>
 #include <curses.h>
-#include "rogue.h"
+#include <string.h>
 #include <ctype.h>
+#include "rogue.h"
 
 /*
  * look:
  *	A quick glance all around the player
  */
+#undef DEBUG
 
+
+void
 look(bool wakeup)
 {
     int x, y;
-    chtype ch;
+    int ch;
     THING *tp;
     PLACE *pp;
     struct room *rp;
@@ -99,10 +104,12 @@ look(bool wakeup)
 		    if (wakeup)
 			wake_monster(y, x);
 		    if (see_monst(tp))
+		    {
 			if (on(player, ISHALU))
 			    ch = rnd(26) + 'A';
 			else
 			    ch = tp->t_disguise;
+		    }
 		}
 	    if (on(player, ISBLIND) && (y != hero.y || x != hero.x))
 		continue;
@@ -112,7 +119,7 @@ look(bool wakeup)
 	    if ((proom->r_flags & ISDARK) && !see_floor && ch == FLOOR)
 		ch = ' ';
 
-	    if (tp != NULL || ch != inch())
+	    if (tp != NULL || ch != CCHAR( inch() ))
 		addch(ch);
 
 	    if (door_stop && !firstmove && running)
@@ -180,7 +187,7 @@ look(bool wakeup)
  *	account whether or not the player is tripping.
  */
 int
-trip_ch(int y, int x, char ch)
+trip_ch(int y, int x, int ch)
 {
     if (on(player, ISHALU) && after)
 	switch (ch)
@@ -206,6 +213,7 @@ trip_ch(int y, int x, char ch)
  *	Erase the area shown by a lamp in a dark room.
  */
 
+void
 erase_lamp(coord *pos, struct room *rp)
 {
     int y, x, ey, sy, ex;
@@ -256,7 +264,8 @@ find_obj(int y, int x)
 		return obj;
     }
 #ifdef MASTER
-    msg(sprintf(prbuf, "Non-object %d,%d", y, x));
+    sprintf(prbuf, "Non-object %d,%d", y, x);
+    msg(prbuf);
     return NULL;
 #else
     /* NOTREACHED */
@@ -269,6 +278,7 @@ find_obj(int y, int x)
  *	She wants to eat something, so let her try
  */
 
+void
 eat()
 {
     THING *obj;
@@ -309,6 +319,7 @@ eat()
  *	Check to see if the guy has gone up a level.
  */
 
+void
 check_level()
 {
     int i, add, olevel;
@@ -334,6 +345,7 @@ check_level()
  *	highest it has been, just in case
  */
 
+void
 chg_str(int amt)
 {
     auto str_t comp;
@@ -354,6 +366,7 @@ chg_str(int amt)
  * add_str:
  *	Perform the actual add, checking upper and lower bound limits
  */
+void
 add_str(str_t *sp, int amt)
 {
     if ((*sp += amt) < 3)
@@ -391,6 +404,7 @@ add_haste(bool potion)
  *	Aggravate all the monsters on this level
  */
 
+void
 aggravate()
 {
     THING *mp;
@@ -485,7 +499,7 @@ get_dir()
 	    }
 	} until (gotit);
 	if (isupper(dir_ch))
-	    dir_ch = tolower(dir_ch);
+	    dir_ch = (char) tolower(dir_ch);
 	last_dir = dir_ch;
 	last_delt.y = delta.y;
 	last_delt.x = delta.x;
@@ -528,6 +542,7 @@ spread(int nm)
  *	Call an object something after use.
  */
 
+void
 call_it(struct obj_info *info)
 {
     if (info->oi_know)
@@ -555,7 +570,7 @@ call_it(struct obj_info *info)
  * rnd_thing:
  *	Pick a random thing appropriate for this level
  */
-int
+char
 rnd_thing()
 {
     int i;

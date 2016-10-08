@@ -4,8 +4,10 @@
  * @(#)io.c	4.32 (Berkeley) 02/05/99
  */
 
+#include <stdarg.h>
 #include <curses.h>
 #include <ctype.h>
+#include <string.h>
 #include "rogue.h"
 
 /*
@@ -18,6 +20,7 @@ static char msgbuf[2*MAXMSG+1];
 static int newpos = 0;
 
 /* VARARGS1 */
+int
 msg(char *fmt, ...)
 {
     va_list args;
@@ -46,6 +49,7 @@ msg(char *fmt, ...)
  *	Add things to the current message
  */
 /* VARARGS1 */
+void
 addmsg(char *fmt, ...)
 {
     va_list args;
@@ -60,6 +64,7 @@ addmsg(char *fmt, ...)
  *	Display a new msg (giving him a chance to see the previous one
  *	if it is up there with the --More--)
  */
+int
 endmsg()
 {
     char ch;
@@ -91,7 +96,7 @@ endmsg()
      * start with a pack addressing character
      */
     if (islower(msgbuf[0]) && !lower_msg && msgbuf[1] != ')')
-	msgbuf[0] = toupper(msgbuf[0]);
+	msgbuf[0] = (char) toupper(msgbuf[0]);
     mvaddstr(0, 0, msgbuf);
     clrtoeol();
     mpos = newpos;
@@ -105,6 +110,7 @@ endmsg()
  * doadd:
  *	Perform an add onto the message buffer
  */
+void
 doadd(char *fmt, va_list args)
 {
     static char buf[MAXSTR];
@@ -116,14 +122,15 @@ doadd(char *fmt, va_list args)
     if (strlen(buf) + newpos >= MAXMSG)
         endmsg(); 
     strcat(msgbuf, buf);
-    newpos = strlen(msgbuf);
+    newpos = (int) strlen(msgbuf);
 }
 
 /*
  * step_ok:
  *	Returns true if it is ok to step on ch
  */
-step_ok(ch)
+int
+step_ok(int ch)
 {
     switch (ch)
     {
@@ -140,13 +147,14 @@ step_ok(ch)
  * readchar:
  *	Reads and returns a character, checking for gross input errors
  */
+char
 readchar()
 {
-    int ch;
+    char ch;
 
-    ch = md_readchar();
+    ch = (char) md_readchar();
 
-    if ((ch == 3) || (ch == 0))
+    if (ch == 3)
     {
 	quit(0);
         return(27);
@@ -159,6 +167,7 @@ readchar()
  * status:
  *	Display the important stats line.  Keep the cursor where it was.
  */
+void
 status()
 {
     register int oy, ox, temp;
@@ -169,7 +178,7 @@ status()
     static int s_hp = 0;
     static int s_arm = 0;
     static str_t s_str = 0;
-    static long s_exp = 0;
+    static int s_exp = 0;
     static char *state_name[] =
     {
 	"", "Hungry", "Weak", "Faint"
@@ -220,7 +229,7 @@ status()
     {
 	move(STATLINE, 0);
                 
-        printw("Level: %d  Gold: %-5d  Hp: %*d(%*d)  Str: %2d(%d)  Arm: %-2d  Exp: %d/%ld  %s",
+        printw("Level: %d  Gold: %-5d  Hp: %*d(%*d)  Str: %2d(%d)  Arm: %-2d  Exp: %d/%d  %s",
 	    level, purse, hpwidth, pstats.s_hpt, hpwidth, max_hp, pstats.s_str,
 	    max_stats.s_str, 10 - s_arm, pstats.s_lvl, pstats.s_exp,
 	    state_name[hungry_state]);
@@ -234,8 +243,8 @@ status()
  * wait_for
  *	Sit around until the guy types the right key
  */
-wait_for(ch)
-register int ch;
+void
+wait_for(int ch)
 {
     register char c;
 
@@ -251,8 +260,8 @@ register int ch;
  * show_win:
  *	Function used to display a window and wait before returning
  */
-show_win(message)
-char *message;
+void
+show_win(char *message)
 {
     WINDOW *win;
 
@@ -264,7 +273,5 @@ char *message;
     wrefresh(win);
     wait_for(' ');
     clearok(curscr, TRUE);
-#ifdef	attron
     touchwin(stdscr);
-#endif	/* attron */
 }

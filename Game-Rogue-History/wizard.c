@@ -11,7 +11,9 @@
  * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
+#include <stdlib.h>
 #include <curses.h>
+#include <string.h>
 #include <ctype.h>
 #include "rogue.h"
 
@@ -20,6 +22,7 @@
  *	What a certin object is
  */
 
+void
 whatis(bool insist, int type)
 {
     THING *obj;
@@ -40,7 +43,7 @@ whatis(bool insist, int type)
 	    else if (obj == NULL)
 		msg("you must identify something");
 	    else if (type && obj->o_type != type &&
-	       !(type == R_OR_S && obj->o_type == RING || obj->o_type == STICK))
+	       !(type == R_OR_S && (obj->o_type == RING || obj->o_type == STICK)) )
 		    msg("you must identify a %s", type_name(type));
 	    else
 		break;
@@ -74,6 +77,7 @@ whatis(bool insist, int type)
  *	Set things up when we really know what a thing is
  */
 
+void
 set_know(THING *obj, struct obj_info *info)
 {
     char **guess;
@@ -97,14 +101,14 @@ type_name(int type)
 {
     struct h_list *hp;
     static struct h_list tlist[] = {
-	POTION,	 "potion",		FALSE,
-	SCROLL,	 "scroll",		FALSE,
-	FOOD,	 "food",		FALSE,
-	R_OR_S,	 "ring, wand or staff",	FALSE,
-	RING,	 "ring",		FALSE,
-	STICK,	 "wand or staff",	FALSE,
-	WEAPON,	 "weapon",		FALSE,
-	ARMOR,	 "suit of armor",	FALSE,
+	{POTION, "potion",		FALSE},
+	{SCROLL, "scroll",		FALSE},
+	{FOOD,	 "food",		FALSE},
+	{R_OR_S, "ring, wand or staff",	FALSE},
+	{RING,	 "ring",		FALSE},
+	{STICK,	 "wand or staff",	FALSE},
+	{WEAPON, "weapon",		FALSE},
+	{ARMOR,	 "suit of armor",	FALSE},
     };
 
     for (hp = tlist; hp->h_ch; hp++)
@@ -120,6 +124,7 @@ type_name(int type)
  *	wizard command for getting anything he wants
  */
 
+void
 create_obj()
 {
     THING *obj;
@@ -191,6 +196,7 @@ create_obj()
  *	Bamf the hero someplace else
  */
 
+void
 teleport()
 {
     static coord c;
@@ -229,7 +235,7 @@ teleport()
  * passwd:
  *	See if user knows password
  */
-bool
+int
 passwd()
 {
     char *sp, c;
@@ -239,7 +245,12 @@ passwd()
     mpos = 0;
     sp = buf;
     while ((c = readchar()) != '\n' && c != '\r' && c != ESCAPE)
-	*sp++ = c;
+	if (c == md_killchar())
+	    sp = buf;
+	else if (c == md_erasechar() && sp > buf)
+	    sp--;
+	else
+	    *sp++ = c;
     if (sp == buf)
 	return FALSE;
     *sp = '\0';
@@ -251,6 +262,7 @@ passwd()
  *	Print out the map for the wizard
  */
 
+void
 show_map()
 {
     int y, x, real;
@@ -259,7 +271,8 @@ show_map()
     for (y = 1; y < NUMLINES - 1; y++)
 	for (x = 0; x < NUMCOLS; x++)
 	{
-	    if (!(real = flat(y, x) & F_REAL))
+	    real = flat(y, x);
+	    if (!(real & F_REAL))
 		wstandout(hw);
 	    wmove(hw, y, x);
 	    waddch(hw, chat(y, x));

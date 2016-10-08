@@ -10,6 +10,7 @@
  * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
+#include <string.h>
 #include <curses.h>
 #include <ctype.h>
 #include "rogue.h"
@@ -21,6 +22,7 @@
  *	it off the ground.
  */
 
+void
 add_pack(THING *obj, bool silent)
 {
     THING *op, *lp;
@@ -72,6 +74,7 @@ add_pack(THING *obj, bool silent)
 			op = next(op);
 		}
 		if (op->o_type == obj->o_type && op->o_which == obj->o_which)
+		{
 		    if (ISMULT(op->o_type))
 		    {
 			if (!pack_room(from_floor, obj))
@@ -109,12 +112,14 @@ dump_it:
 		    }
 		    else
 			lp = op;
+		}
 out:
 		break;
 	    }
 	}
 
 	if (lp != NULL)
+	{
 	    if (!pack_room(from_floor, obj))
 		return;
 	    else
@@ -126,6 +131,7 @@ out:
 		    prev(next(lp)) = obj;
 		next(lp) = obj;
 	    }
+	}
     }
 
     obj->o_flags |= ISFOUND;
@@ -135,7 +141,7 @@ out:
      * get mad and run at the hero.
      */
     for (op = mlist; op != NULL; op = next(op))
-	if (op->t_dest = &obj->o_pos)
+	if (op->t_dest == &obj->o_pos)
 	    op->t_dest = &hero;
 
     if (obj->o_type == AMULET)
@@ -230,7 +236,7 @@ pack_char()
     for (bp = pack_used; *bp; bp++)
 	continue;
     *bp = TRUE;
-    return (bp - pack_used) + 'a';
+    return (char)((int)(bp - pack_used) + 'a');
 }
 
 /*
@@ -285,6 +291,7 @@ inventory(THING *list, int type)
  *	Add something to characters pack.
  */
 
+void
 pick_up(char ch)
 {
     THING *obj;
@@ -328,6 +335,7 @@ pick_up(char ch)
  *	Print out the message if you are just moving onto an object
  */
 
+void
 move_msg(THING *obj)
 {
     if (!terse)
@@ -340,6 +348,7 @@ move_msg(THING *obj)
  *	Allow player to inventory a single item
  */
 
+void
 picky_inven()
 {
     THING *obj;
@@ -438,6 +447,7 @@ get_item(char *purpose, int type)
  *	Add or subtract gold from the pack
  */
 
+void
 money(int value)
 {
     purse += value;
@@ -484,6 +494,7 @@ floor_at()
  *	Reset the last command when the current one is aborted
  */
 
+void
 reset_last()
 {
     last_comm = l_last_comm;

@@ -10,29 +10,19 @@
  * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
-#include <curses.h>
+#include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <errno.h>
 #include <signal.h>
+#include <string.h>
+#include <curses.h>
 #include "rogue.h"
 #include "score.h"
-
-#ifndef NSIG
-#define NSIG 32
-#endif
 
 typedef struct stat STAT;
 
 extern char version[], encstr[];
-
-#ifdef	attron
-# define	CE	clr_eol
-#else	/* attron */
-extern bool _endwin;
-#endif	/* attron */
-
-static char frob;
 
 static STAT sbuf;
 
@@ -41,6 +31,7 @@ static STAT sbuf;
  *	Implement the "save game" command
  */
 
+void
 save_game()
 {
     FILE *savef;
@@ -131,12 +122,11 @@ void
 auto_save(int sig)
 {
     FILE *savef;
-    int i;
+    NOOP(sig);
 
-    for (i = 0; i < NSIG; i++)
-	signal(i, SIG_IGN);
+    md_ignoreallsignals();
     if (file_name[0] != '\0' && ((savef = fopen(file_name, "w")) != NULL ||
-	(md_unlink_open_file(file_name, fileno(savef)) >= 0 && (savef = fopen(file_name, "w")) != NULL)))
+	(md_unlink_open_file(file_name, savef) >= 0 && (savef = fopen(file_name, "w")) != NULL)))
 	    save_file(savef);
     exit(0);
 }
@@ -146,6 +136,7 @@ auto_save(int sig)
  *	Write the saved game on the file
  */
 
+void
 save_file(FILE *savef)
 {
     char buf[80];
@@ -153,24 +144,12 @@ save_file(FILE *savef)
     putchar('\n');
     endwin();
     resetltchars();
-    chmod(file_name, 0400);
-    /*
-     * DO NOT DELETE.  This forces stdio to allocate the output buffer
-     * so that malloc doesn't get confused on restart
-     */
-    frob = 0;
-    fwrite(&frob, sizeof frob, 1, savef);
-
-#ifndef	attron
-    _endwin = TRUE;
-#endif	/* attron */
-    fstat(fileno(savef), &sbuf);
+    md_chmod(file_name, 0400);
     encwrite(version, strlen(version)+1, savef);
     sprintf(buf,"%d x %d\n", LINES, COLS);
     encwrite(buf,80,savef);
     rs_save_file(savef);
     fflush(savef);
-    fstat(fileno(savef), &sbuf);
     fclose(savef);
     exit(0);
 }
@@ -183,9 +162,8 @@ save_file(FILE *savef)
 bool
 restore(char *file, char **envp)
 {
-    int inf;
-    bool syml;
-    char fb;
+    FILE *inf;
+    int syml;
     extern char **environ;
     auto char buf[MAXSTR];
     auto STAT sbuf2;
@@ -194,28 +172,17 @@ restore(char *file, char **envp)
     if (strcmp(file, "-r") == 0)
 	file = file_name;
 
-#ifdef SIGTSTP
-    /*
-     * If a process can be suspended, this code wouldn't work
-     */
-# ifdef SIG_HOLD
-    signal(SIGTSTP, SIG_HOLD);
-# else
-    signal(SIGTSTP, SIG_IGN);
-# endif
-#endif
-    if ((inf = open(file, 0)) < 0)
+	md_tstphold();
+
+	if ((inf = fopen(file,"r")) == NULL)
     {
 	perror(file);
 	return FALSE;
     }
-    fstat(inf, &sbuf2);
+    stat(file, &sbuf2);
     syml = is_symlink(file);
 
-
     fflush(stdout);
-    read(inf, &frob, sizeof frob);
-    fb = frob;
     encread(buf, (unsigned) strlen(version) + 1, inf);
     if (strcmp(buf, version) != 0)
     {
@@ -256,7 +223,7 @@ restore(char *file, char **envp)
 #ifdef MASTER
 	!wizard &&
 #endif
-	md_unlink_open_file(file, inf) < 0)
+        md_unlink_open_file(file, inf) < 0)
     {
 	printf("Cannot unlink file\n");
 	return FALSE;
@@ -286,14 +253,13 @@ restore(char *file, char **envp)
 	printf("\n\"He's dead, Jim\"\n");
 	return FALSE;
     }
-#ifdef SIGTSTP
-    signal(SIGTSTP, tstp);
-#endif
+
+	md_tstpresume();
 
     environ = envp;
     strcpy(file_name, file);
     clearok(curscr, TRUE);
-    srand(getpid());
+    srand(md_getpid());
     msg("file name: %s", file);
     playit();
     /*NOTREACHED*/
@@ -314,7 +280,7 @@ encwrite(char *start, size_t size, FILE *outf)
     size_t o_size = size;
     e1 = encstr;
     e2 = statlist;
-    fb = frob;
+    fb = 0;
 
     while(size)
     {
@@ -322,7 +288,7 @@ encwrite(char *start, size_t size, FILE *outf)
             break;
 
 	temp = *e1++;
-	fb += temp * *e2++;
+	fb = fb + ((char) (temp * *e2++));
 	if (*e1 == '\0')
 	    e1 = encstr;
 	if (*e2 == '\0')
@@ -338,15 +304,16 @@ encwrite(char *start, size_t size, FILE *outf)
  *	Perform an encrypted read
  */
 size_t
-encread(char *start, size_t size, int inf)
+encread(char *start, size_t size, FILE *inf)
 {
     char *e1, *e2, fb;
-    int temp, read_size;
+    int temp;
+    size_t read_size;
     extern char statlist[];
 
-    fb = frob;
+    fb = 0;
 
-    if ((read_size = read(inf, start, size)) == 0 || read_size == -1)
+    if ((read_size = fread(start,1,size,inf)) == 0 || read_size == -1)
 	return(read_size);
 
     e1 = encstr;
@@ -356,7 +323,7 @@ encread(char *start, size_t size, int inf)
     {
 	*start++ ^= *e1 ^ *e2 ^ fb;
 	temp = *e1++;
-	fb += temp * *e2++;
+	fb = fb + (char)(temp * *e2++);
 	if (*e1 == '\0')
 	    e1 = encstr;
 	if (*e2 == '\0')
@@ -371,37 +338,53 @@ static char scoreline[100];
  * read_scrore
  *	Read in the score file
  */
-rd_score(SCORE *top_ten, int fd)
+void
+rd_score(SCORE *top_ten)
 {
     unsigned int i;
 
-    for(i = 0; i < numscores; i++)
+	if (scoreboard == NULL)
+		return;
+
+	rewind(scoreboard); 
+
+	for(i = 0; i < numscores; i++)
     {
-        encread(top_ten[i].sc_name, MAXSTR, fd);
-        encread(scoreline, 100, fd);
-        sscanf(scoreline, " %u %hu %u %hu %hu %lx \n",
+        encread(top_ten[i].sc_name, MAXSTR, scoreboard);
+        encread(scoreline, 100, scoreboard);
+        sscanf(scoreline, " %u %d %u %hu %d %x \n",
             &top_ten[i].sc_uid, &top_ten[i].sc_score,
             &top_ten[i].sc_flags, &top_ten[i].sc_monster,
             &top_ten[i].sc_level, &top_ten[i].sc_time);
     }
+
+	rewind(scoreboard); 
 }
 
 /*
  * write_scrore
  *	Read in the score file
  */
-wr_score(SCORE *top_ten, FILE *outf)
+void
+wr_score(SCORE *top_ten)
 {
     unsigned int i;
+
+	if (scoreboard == NULL)
+		return;
+
+	rewind(scoreboard);
 
     for(i = 0; i < numscores; i++)
     {
           memset(scoreline,0,100);
-          encwrite(top_ten[i].sc_name, MAXSTR, outf);
-          sprintf(scoreline, " %u %hu %u %hu %hu %lx \n",
+          encwrite(top_ten[i].sc_name, MAXSTR, scoreboard);
+          sprintf(scoreline, " %u %d %u %hu %d %x \n",
               top_ten[i].sc_uid, top_ten[i].sc_score,
               top_ten[i].sc_flags, top_ten[i].sc_monster,
               top_ten[i].sc_level, top_ten[i].sc_time);
-          encwrite(scoreline,100,outf);
+          encwrite(scoreline,100,scoreboard);
     }
+
+	rewind(scoreboard); 
 }

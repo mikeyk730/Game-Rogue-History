@@ -10,6 +10,7 @@
  * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
+#include <stdlib.h>
 #include <curses.h>
 #include "rogue.h"
 
@@ -18,6 +19,7 @@
  *	Draw all the passages on a level.
  */
 
+void
 do_passages()
 {
     struct rdes *r1, *r2 = NULL;
@@ -43,7 +45,7 @@ do_passages()
     /*
      * reinitialize room graph description
      */
-    for (r1 = rdes; r1 < &rdes[MAXROOMS]; r1++)
+    for (r1 = rdes; r1 <= &rdes[MAXROOMS-1]; r1++)
     {
 	for (j = 0; j < MAXROOMS; j++)
 	    r1->isconn[j] = FALSE;
@@ -83,8 +85,8 @@ do_passages()
 	else
 	{
 	    r2->ingraph = TRUE;
-	    i = r1 - rdes;
-	    j = r2 - rdes;
+	    i = (int)(r1 - rdes);
+	    j = (int)(r2 - rdes);
 	    conn(i, j);
 	    r1->isconn[j] = TRUE;
 	    r2->isconn[i] = TRUE;
@@ -112,8 +114,8 @@ do_passages()
 	 */
 	if (j != 0)
 	{
-	    i = r1 - rdes;
-	    j = r2 - rdes;
+	    i = (int)(r1 - rdes);
+	    j = (int)(r2 - rdes);
 	    conn(i, j);
 	    r1->isconn[j] = TRUE;
 	    r2->isconn[i] = TRUE;
@@ -127,10 +129,11 @@ do_passages()
  *	Draw a corridor from a room in a certain direction.
  */
 
+void
 conn(int r1, int r2)
 {
     struct room *rpf, *rpt = NULL;
-    char rmt;
+    int rmt;
     int distance = 0, turn_spot, turn_distance = 0;
     int rm;
     char direc;
@@ -267,6 +270,7 @@ conn(int r1, int r2)
  *	add a passage character or secret passage here
  */
 
+void
 putpass(coord *cp)
 {
     PLACE *pp;
@@ -285,6 +289,7 @@ putpass(coord *cp)
  *	the exits array of the room.
  */
 
+void
 door(struct room *rm, coord *cp)
 {
     PLACE *pp;
@@ -313,6 +318,7 @@ door(struct room *rm, coord *cp)
  *	Add the passages to the current window (wizard command)
  */
 
+void
 add_pass()
 {
     PLACE *pp;
@@ -354,6 +360,7 @@ static int pnum;
 static bool newpnum;
 
 
+void
 passnum()
 {
     struct room *rp;
@@ -376,6 +383,7 @@ passnum()
  *	Number a passageway square and its brethren
  */
 
+void
 numpass(int y, int x)
 {
     char *fp;

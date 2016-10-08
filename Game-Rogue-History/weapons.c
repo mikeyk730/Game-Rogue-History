@@ -11,6 +11,7 @@
  */
 
 #include <curses.h>
+#include <string.h>
 #include <ctype.h>
 #include "rogue.h"
 
@@ -40,6 +41,7 @@ static struct init_weaps {
  *	Fire a missile in a given direction
  */
 
+void
 missile(int ydelta, int xdelta)
 {
     THING *obj;
@@ -68,6 +70,7 @@ missile(int ydelta, int xdelta)
  *	across the room
  */
 
+void
 do_motion(THING *obj, int ydelta, int xdelta)
 {
     int ch;
@@ -115,6 +118,7 @@ do_motion(THING *obj, int ydelta, int xdelta)
  *	Drop an item someplace around here.
  */
 
+void
 fall(THING *obj, bool pr)
 {
     PLACE *pp;
@@ -123,13 +127,15 @@ fall(THING *obj, bool pr)
     if (fallpos(&obj->o_pos, &fpos))
     {
 	pp = INDEX(fpos.y, fpos.x);
-	pp->p_ch = obj->o_type;
+	pp->p_ch = (char) obj->o_type;
 	obj->o_pos = fpos;
 	if (cansee(fpos.y, fpos.x))
+	{
 	    if (pp->p_monst != NULL)
-		pp->p_monst->t_oldch = obj->o_type;
+		pp->p_monst->t_oldch = (char) obj->o_type;
 	    else
 		mvaddch(fpos.y, fpos.x, obj->o_type);
+	}
 	attach(lvl_obj, obj);
 	return;
     }
@@ -151,7 +157,8 @@ fall(THING *obj, bool pr)
  *	Set up the initial goodies for a weapon
  */
 
-init_weapon(THING *weap, char which)
+void
+init_weapon(THING *weap, int which)
 {
     struct init_weaps *iwp;
 
@@ -185,6 +192,7 @@ init_weapon(THING *weap, char which)
  * hit_monster:
  *	Does the missile hit the monster?
  */
+int
 hit_monster(int y, int x, THING *obj)
 {
     static coord mp;
@@ -214,6 +222,7 @@ num(int n1, int n2, char type)
  *	Pull out a certain weapon
  */
 
+void
 wield()
 {
     THING *obj, *oweapon;
@@ -275,5 +284,5 @@ fallpos(coord *pos, coord *newpos)
 		newpos->x = x;
 	    }
 	}
-    return (cnt != 0);
+    return (bool)(cnt != 0);
 }

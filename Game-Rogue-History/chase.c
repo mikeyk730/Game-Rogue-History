@@ -10,6 +10,7 @@
  * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
+#include <stdlib.h>
 #include <curses.h>
 #include "rogue.h"
 
@@ -21,6 +22,7 @@ static coord ch_ret;				/* Where chasing takes you */
  * runners:
  *	Make all the running monsters move.
  */
+void
 runners()
 {
     register THING *tp;
@@ -58,8 +60,8 @@ runners()
  * move_monst:
  *	Execute a single turn of running for a monster
  */
-move_monst(tp)
-register THING *tp;
+int
+move_monst(THING *tp)
 {
     if (!on(*tp, ISSLOW) || tp->t_turn)
 	if (do_chase(tp) == -1)
@@ -109,8 +111,8 @@ relocate(THING *th, coord *new_loc)
  * do_chase:
  *	Make one thing chase another.
  */
-do_chase(th)
-register THING *th;
+int
+do_chase(THING *th)
 {
     register coord *cp;
     register struct room *rer, *ree;	/* room of chaser, room of chasee */
@@ -229,9 +231,8 @@ over:
  * set_oldch:
  *	Set the oldch character for the monster
  */
-set_oldch(tp, cp)
-register THING *tp;
-register coord *cp;
+void
+set_oldch(THING *tp, coord *cp)
 {
     char sch;
 
@@ -239,13 +240,15 @@ register coord *cp;
         return;
 
     sch = tp->t_oldch;
-    tp->t_oldch = mvinch(cp->y,cp->x);
+    tp->t_oldch = CCHAR( mvinch(cp->y,cp->x) );
     if (!on(player, ISBLIND))
+    {
 	    if ((sch == FLOOR || tp->t_oldch == FLOOR) &&
 		(tp->t_room->r_flags & ISDARK))
 		    tp->t_oldch = ' ';
 	    else if (dist_cp(cp, &hero) <= LAMPDIST && see_floor)
 		tp->t_oldch = chat(cp->y, cp->x);
+    }
 }
 
 /*
@@ -253,8 +256,7 @@ register coord *cp;
  *	Return TRUE if the hero can see the monster
  */
 bool
-see_monst(mp)
-register THING *mp;
+see_monst(THING *mp)
 {
     int y, x;
 
@@ -273,15 +275,15 @@ register THING *mp;
     }
     if (mp->t_room != proom)
 	return FALSE;
-    return (!(mp->t_room->r_flags & ISDARK));
+    return ((bool)!(mp->t_room->r_flags & ISDARK));
 }
 
 /*
  * runto:
  *	Set a monster running after the hero.
  */
-runto(runner)
-register coord *runner;
+void
+runto(coord *runner)
 {
     register THING *tp;
 
@@ -309,9 +311,7 @@ register coord *runner;
  *	FALSE if we reach the goal.
  */
 bool
-chase(tp,ee)
-THING *tp;
-coord *ee;
+chase(THING *tp, coord *ee)
 {
     register THING *obj;
     register int x, y;
@@ -413,7 +413,7 @@ coord *ee;
 	    }
 	}
     }
-    return (curdist != 0 && !ce(ch_ret, hero));
+    return (bool)(curdist != 0 && !ce(ch_ret, hero));
 }
 
 /*
@@ -422,8 +422,7 @@ coord *ee;
  *	in any room.
  */
 struct room *
-roomin(cp)
-register coord *cp;
+roomin(coord *cp)
 {
     register struct room *rp;
     register char *fp;
@@ -441,7 +440,7 @@ register coord *cp;
     msg("in some bizarre place (%d, %d)", unc(*cp));
 #ifdef MASTER
     abort();
-    /* NOTREACHED */
+    return NULL;
 #else
     return NULL;
 #endif
@@ -452,14 +451,13 @@ register coord *cp;
  *	Check to see if the move is legal if it is diagonal
  */
 bool
-diag_ok(sp,ep)
-register coord *sp, *ep;
+diag_ok(coord *sp, coord *ep)
 {
     if (ep->x < 0 || ep->x >= NUMCOLS || ep->y <= 0 || ep->y >= NUMLINES - 1)
 	return FALSE;
     if (ep->x == sp->x || ep->y == sp->y)
 	return TRUE;
-    return (step_ok(chat(ep->y, sp->x)) && step_ok(chat(sp->y, ep->x)));
+    return (bool)(step_ok(chat(ep->y, sp->x)) && step_ok(chat(sp->y, ep->x)));
 }
 
 /*
@@ -467,8 +465,7 @@ register coord *sp, *ep;
  *	Returns true if the hero can see a certain coordinate.
  */
 bool
-cansee(y,x)
-register int y, x;
+cansee(int y, int x)
 {
     register struct room *rer;
     static coord tp;
@@ -489,7 +486,7 @@ register int y, x;
      */
     tp.y = y;
     tp.x = x;
-    return ((rer = roomin(&tp)) == proom && !(rer->r_flags & ISDARK));
+    return (bool)((rer = roomin(&tp)) == proom && !(rer->r_flags & ISDARK));
 }
 
 /*
@@ -497,8 +494,7 @@ register int y, x;
  *	find the proper destination for the monster
  */
 coord *
-find_dest(tp)
-register THING *tp;
+find_dest(THING *tp)
 {
     register THING *obj;
     register int prob;
@@ -529,8 +525,7 @@ register THING *tp;
  *	our purposes, since it's only used comparitively.
  */
 int
-dist(y1,x1,y2,x2)
-register int y1, x1, y2, x2;
+dist(int y1, int x1, int y2, int x2)
 {
     return ((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
 }
@@ -540,8 +535,7 @@ register int y1, x1, y2, x2;
  *	Call dist() with appropriate arguments for coord pointers
  */
 int
-dist_cp(c1,c2)
-register coord *c1, *c2;
+dist_cp(coord *c1, coord *c2)
 {
     return dist(c1->y, c1->x, c2->y, c2->x);
 }

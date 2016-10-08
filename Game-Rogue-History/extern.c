@@ -15,7 +15,7 @@
 
 bool after;				/* True if we want after daemons */
 bool again;				/* Repeating the last command */
-bool noscore;				/* Was a wizard sometime */
+int  noscore;				/* Was a wizard sometime */
 bool seenstairs;			/* Have seen the stairs (for lsd) */
 bool amulet = FALSE;			/* He found the amulet */
 bool door_stop = FALSE;			/* Stop running when we pass a door */
@@ -41,7 +41,7 @@ bool terse = FALSE;			/* True if we should be short */
 bool to_death = FALSE;			/* Fighting is to the death! */
 bool tombstone = TRUE;			/* Print out tombstone at end */
 #ifdef MASTER
-bool wizard = FALSE;			/* True if allows wizard commands */
+int wizard = FALSE;			/* True if allows wizard commands */
 #endif
 bool pack_used[26] = {			/* Is the character used in the pack? */
     FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE,
@@ -55,16 +55,13 @@ char huh[MAXSTR];			/* The last message printed */
 char *p_colors[MAXPOTIONS];		/* Colors of the potions */
 char prbuf[2*MAXSTR];			/* buffer for sprintfs */
 char *r_stones[MAXRINGS];		/* Stone settings of the rings */
-char *release;				/* release number of program */
 char runch;				/* Direction player is running */
 char *s_names[MAXSCROLLS];		/* Names of the scrolls */
 char take;				/* Thing she is taking */
 char whoami[MAXSTR];			/* Name of player */
 char *ws_made[MAXSTICKS];		/* What sticks are made of */
 char *ws_type[MAXSTICKS];		/* Is it a wand or a staff */
-#ifdef TIOCSLTC
-char orig_dsusp;			/* Original dsusp char */
-#endif
+int  orig_dsusp;			/* Original dsusp char */
 char fruit[MAXSTR] =			/* Favorite fruit */
 		{ 's', 'l', 'i', 'm', 'e', '-', 'm', 'o', 'l', 'd', '\0' };
 char home[MAXSTR] = { '\0' };		/* User's home directory */
@@ -111,7 +108,7 @@ int a_class[MAXARMORS] = {		/* Armor class for each armor type */
 };
 
 int count = 0;				/* Number of times to repeat command */
-int fd;					/* File descriptor for score file */
+FILE *scoreboard = NULL;	/* File descriptor for score file */
 int food_left;				/* Amount of food in hero's stomach */
 int lastscore = -1;			/* Score before this turn */
 int no_command = 0;			/* Number of turns asleep */
@@ -120,9 +117,9 @@ int purse = 0;				/* How much gold he has */
 int quiet = 0;				/* Number of quiet turns */
 int vf_hit = 0;				/* Number of time flytrap has hit */
 
-long dnum;				/* Dungeon number */
-long seed;				/* Random number seed */
-long e_levels[] = {
+int dnum;				/* Dungeon number */
+int seed;				/* Random number seed */
+int e_levels[] = {
         10L,
 	20L,
 	40L,
@@ -172,18 +169,18 @@ struct room *oldrp;			/* Roomin(&oldpos) */
 struct room rooms[MAXROOMS];		/* One for each room -- A level */
 struct room passages[MAXPASS] =		/* One for each passage */
 {
-    { {0, 0}, {0, 0}, {0, 0}, 0, ISGONE|ISDARK, 0, 0 },
-    { {0, 0}, {0, 0}, {0, 0}, 0, ISGONE|ISDARK, 0, 0 },
-    { {0, 0}, {0, 0}, {0, 0}, 0, ISGONE|ISDARK, 0, 0 },
-    { {0, 0}, {0, 0}, {0, 0}, 0, ISGONE|ISDARK, 0, 0 },
-    { {0, 0}, {0, 0}, {0, 0}, 0, ISGONE|ISDARK, 0, 0 },
-    { {0, 0}, {0, 0}, {0, 0}, 0, ISGONE|ISDARK, 0, 0 },
-    { {0, 0}, {0, 0}, {0, 0}, 0, ISGONE|ISDARK, 0, 0 },
-    { {0, 0}, {0, 0}, {0, 0}, 0, ISGONE|ISDARK, 0, 0 },
-    { {0, 0}, {0, 0}, {0, 0}, 0, ISGONE|ISDARK, 0, 0 },
-    { {0, 0}, {0, 0}, {0, 0}, 0, ISGONE|ISDARK, 0, 0 },
-    { {0, 0}, {0, 0}, {0, 0}, 0, ISGONE|ISDARK, 0, 0 },
-    { {0, 0}, {0, 0}, {0, 0}, 0, ISGONE|ISDARK, 0, 0 }
+    { {0, 0}, {0, 0}, {0, 0}, 0, ISGONE|ISDARK, 0, {{0,0}} },
+    { {0, 0}, {0, 0}, {0, 0}, 0, ISGONE|ISDARK, 0, {{0,0}} },
+    { {0, 0}, {0, 0}, {0, 0}, 0, ISGONE|ISDARK, 0, {{0,0}} },
+    { {0, 0}, {0, 0}, {0, 0}, 0, ISGONE|ISDARK, 0, {{0,0}} },
+    { {0, 0}, {0, 0}, {0, 0}, 0, ISGONE|ISDARK, 0, {{0,0}} },
+    { {0, 0}, {0, 0}, {0, 0}, 0, ISGONE|ISDARK, 0, {{0,0}} },
+    { {0, 0}, {0, 0}, {0, 0}, 0, ISGONE|ISDARK, 0, {{0,0}} },
+    { {0, 0}, {0, 0}, {0, 0}, 0, ISGONE|ISDARK, 0, {{0,0}} },
+    { {0, 0}, {0, 0}, {0, 0}, 0, ISGONE|ISDARK, 0, {{0,0}} },
+    { {0, 0}, {0, 0}, {0, 0}, 0, ISGONE|ISDARK, 0, {{0,0}} },
+    { {0, 0}, {0, 0}, {0, 0}, 0, ISGONE|ISDARK, 0, {{0,0}} },
+    { {0, 0}, {0, 0}, {0, 0}, 0, ISGONE|ISDARK, 0, {{0,0}} }
 };
 
 #define ___ 1
@@ -325,74 +322,70 @@ struct obj_info ws_info[MAXSTICKS] = {
 };
 
 struct h_list helpstr[] = {
-    '?',	"	prints help",				TRUE,
-    '/',	"	identify object",			TRUE,
-    'h',	"	left",					TRUE,
-    'j',	"	down",					TRUE,
-    'k',	"	up",					TRUE,
-    'l',	"	right",					TRUE,
-    'y',	"	up & left",				TRUE,
-    'u',	"	up & right",				TRUE,
-    'b',	"	down & left",				TRUE,
-    'n',	"	down & right",				TRUE,
-    'H',	"	run left",				FALSE,
-    'J',	"	run down",				FALSE,
-    'K',	"	run up",				FALSE,
-    'L',	"	run right",				FALSE,
-    'Y',	"	run up & left",				FALSE,
-    'U',	"	run up & right",			FALSE,
-    'B',	"	run down & left",			FALSE,
-    'N',	"	run down & right",			FALSE,
-    CTRL('H'),	"	run left until adjacent",		FALSE,
-    CTRL('J'),	"	run down until adjacent",		FALSE,
-    CTRL('K'),	"	run up until adjacent",			FALSE,
-    CTRL('L'),	"	run right until adjacent",		FALSE,
-    CTRL('Y'),	"	run up & left until adjacent",		FALSE,
-    CTRL('U'),	"	run up & right until adjacent",		FALSE,
-    CTRL('B'),	"	run down & left until adjacent",	FALSE,
-    CTRL('N'),	"	run down & right until adjacent",	FALSE,
-    '\0',	"	<SHIFT><dir>: run that way",		TRUE,
-    '\0',	"	<CTRL><dir>: run till adjacent",	TRUE,
-    'f',	"<dir>	fight till death or near death",	TRUE,
-    't',	"<dir>	throw something",			TRUE,
-    'm',	"<dir>	move onto without picking up",		TRUE,
-    'z',	"<dir>	zap a wand in a direction",		TRUE,
-    '^',	"<dir>	identify trap type",			TRUE,
-    's',	"	search for trap/secret door",		TRUE,
-    '>',	"	go down a staircase",			TRUE,
-    '<',	"	go up a staircase",			TRUE,
-    '.',	"	rest for a turn",			TRUE,
-    ',',	"	pick something up",			TRUE,
-    'i',	"	inventory",				TRUE,
-    'I',	"	inventory single item",			TRUE,
-    'q',	"	quaff potion",				TRUE,
-    'r',	"	read scroll",				TRUE,
-    'e',	"	eat food",				TRUE,
-    'w',	"	wield a weapon",			TRUE,
-    'W',	"	wear armor",				TRUE,
-    'T',	"	take armor off",			TRUE,
-    'P',	"	put on ring",				TRUE,
-    'R',	"	remove ring",				TRUE,
-    'd',	"	drop object",				TRUE,
-    'c',	"	call object",				TRUE,
-    'a',	"	repeat last command",			TRUE,
-    ')',	"	print current weapon",			TRUE,
-    ']',	"	print current armor",			TRUE,
-    '=',	"	print current rings",			TRUE,
-    '@',	"	print current stats",			TRUE,
-    'D',	"	recall what's been discovered",		TRUE,
-    'o',	"	examine/set options",			TRUE,
-    CTRL('R'),	"	redraw screen",				TRUE,
-    CTRL('P'),	"	repeat last message",			TRUE,
-    ESCAPE,	"	cancel command",			TRUE,
-    'S',	"	save game",				TRUE,
-    'Q',	"	quit",					TRUE,
-    '!',	"	shell escape",				TRUE,
-    'F',	"<dir>	fight till either of you dies",		TRUE,
-    'v',	"	print version number",			TRUE,
-    0,		NULL
+    {'?',	"	prints help",				TRUE},
+    {'/',	"	identify object",			TRUE},
+    {'h',	"	left",					TRUE},
+    {'j',	"	down",					TRUE},
+    {'k',	"	up",					TRUE},
+    {'l',	"	right",					TRUE},
+    {'y',	"	up & left",				TRUE},
+    {'u',	"	up & right",				TRUE},
+    {'b',	"	down & left",				TRUE},
+    {'n',	"	down & right",				TRUE},
+    {'H',	"	run left",				FALSE},
+    {'J',	"	run down",				FALSE},
+    {'K',	"	run up",				FALSE},
+    {'L',	"	run right",				FALSE},
+    {'Y',	"	run up & left",				FALSE},
+    {'U',	"	run up & right",			FALSE},
+    {'B',	"	run down & left",			FALSE},
+    {'N',	"	run down & right",			FALSE},
+    {CTRL('H'),	"	run left until adjacent",		FALSE},
+    {CTRL('J'),	"	run down until adjacent",		FALSE},
+    {CTRL('K'),	"	run up until adjacent",			FALSE},
+    {CTRL('L'),	"	run right until adjacent",		FALSE},
+    {CTRL('Y'),	"	run up & left until adjacent",		FALSE},
+    {CTRL('U'),	"	run up & right until adjacent",		FALSE},
+    {CTRL('B'),	"	run down & left until adjacent",	FALSE},
+    {CTRL('N'),	"	run down & right until adjacent",	FALSE},
+    {'\0',	"	<SHIFT><dir>: run that way",		TRUE},
+    {'\0',	"	<CTRL><dir>: run till adjacent",	TRUE},
+    {'f',	"<dir>	fight till death or near death",	TRUE},
+    {'t',	"<dir>	throw something",			TRUE},
+    {'m',	"<dir>	move onto without picking up",		TRUE},
+    {'z',	"<dir>	zap a wand in a direction",		TRUE},
+    {'^',	"<dir>	identify trap type",			TRUE},
+    {'s',	"	search for trap/secret door",		TRUE},
+    {'>',	"	go down a staircase",			TRUE},
+    {'<',	"	go up a staircase",			TRUE},
+    {'.',	"	rest for a turn",			TRUE},
+    {',',	"	pick something up",			TRUE},
+    {'i',	"	inventory",				TRUE},
+    {'I',	"	inventory single item",			TRUE},
+    {'q',	"	quaff potion",				TRUE},
+    {'r',	"	read scroll",				TRUE},
+    {'e',	"	eat food",				TRUE},
+    {'w',	"	wield a weapon",			TRUE},
+    {'W',	"	wear armor",				TRUE},
+    {'T',	"	take armor off",			TRUE},
+    {'P',	"	put on ring",				TRUE},
+    {'R',	"	remove ring",				TRUE},
+    {'d',	"	drop object",				TRUE},
+    {'c',	"	call object",				TRUE},
+    {'a',	"	repeat last command",			TRUE},
+    {')',	"	print current weapon",			TRUE},
+    {']',	"	print current armor",			TRUE},
+    {'=',	"	print current rings",			TRUE},
+    {'@',	"	print current stats",			TRUE},
+    {'D',	"	recall what's been discovered",		TRUE},
+    {'o',	"	examine/set options",			TRUE},
+    {CTRL('R'),	"	redraw screen",				TRUE},
+    {CTRL('P'),	"	repeat last message",			TRUE},
+    {ESCAPE,	"	cancel command",			TRUE},
+    {'S',	"	save game",				TRUE},
+    {'Q',	"	quit",					TRUE},
+    {'!',	"	shell escape",				TRUE},
+    {'F',	"<dir>	fight till either of you dies",		TRUE},
+    {'v',	"	print version number",			TRUE},
+    {0,		NULL }
 };
-
-#ifdef TIOCGLTC
-struct ltchars ltc;		/* needed to change ^Y to not be suspchar */
-#endif /* TIOCGLTC */

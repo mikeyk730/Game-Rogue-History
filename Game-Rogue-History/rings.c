@@ -18,6 +18,7 @@
  *	Put a ring on a hand
  */
 
+void
 ring_on()
 {
     THING *obj;
@@ -89,6 +90,7 @@ ring_on()
  *	take off a ring
  */
 
+void
 ring_off()
 {
     int ring;

@@ -11,6 +11,7 @@
  */
 
 #include <curses.h>
+#include <string.h>
 #include "rogue.h"
 #include <ctype.h>
 
@@ -55,6 +56,7 @@ randmonster(bool wander)
  *	Pick a new monster and add it to the list
  */
 
+void
 new_monster(THING *tp, char type, coord *cp)
 {
     struct monster *mp;
@@ -67,7 +69,7 @@ new_monster(THING *tp, char type, coord *cp)
     tp->t_disguise = type;
     tp->t_pos = *cp;
     move(cp->y, cp->x);
-    tp->t_oldch = inch();
+    tp->t_oldch = CCHAR( inch() );
     tp->t_room = roomin(cp);
     moat(cp->y, cp->x) = tp;
     mp = &monsters[tp->t_type-'A'];
@@ -113,6 +115,7 @@ exp_add(THING *tp)
  *	Create a new wandering monster and aim it at the player
  */
 
+void
 wanderer()
 {
     THING *tp;
@@ -156,6 +159,8 @@ wake_monster(int y, int x)
 	msg("can't find monster in wake_monster");
 #else
     tp = moat(y, x);
+    if (tp == NULL) 	 	 
+	endwin(), abort(); 
 #endif
     ch = tp->t_type;
     /*
@@ -209,6 +214,7 @@ wake_monster(int y, int x)
  *	Give a pack to a monster if it deserves one
  */
 
+void
 give_pack(THING *tp)
 {
     if (level >= max_level && rnd(100) < monsters[tp->t_type-'A'].m_carry)

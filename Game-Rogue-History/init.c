@@ -10,14 +10,17 @@
  * See the file LICENSE.TXT for full copyright and licensing information.
  */
 
+#include <stdlib.h>
 #include <curses.h>
 #include <ctype.h>
+#include <string.h>
 #include "rogue.h"
 
 /*
  * init_player:
  *	Roll her up
  */
+void
 init_player()
 {
     register THING *obj;
@@ -233,6 +236,7 @@ static bool used[MAX3(NCOLORS, NSTONES, NWOOD)];
  * init_colors:
  *	Initialize the potion color scheme for this time
  */
+void
 init_colors()
 {
     register int i, j;
@@ -255,6 +259,7 @@ init_colors()
  */
 #define MAXNAME	40	/* Max number of characters in a name */
 
+void
 init_names()
 {
     register int nsyl;
@@ -288,6 +293,7 @@ init_names()
  * init_stones:
  *	Initialize the ring stone setting scheme for this time
  */
+void
 init_stones()
 {
     register int i, j;
@@ -309,6 +315,7 @@ init_stones()
  * init_materials:
  *	Initialize the construction materials for wands and staffs
  */
+void
 init_materials()
 {
     register int i, j;
@@ -370,20 +377,18 @@ init_materials()
  * sumprobs:
  *	Sum up the probabilities for items appearing
  */
-sumprobs(info, bound
+void
+sumprobs(struct obj_info *info, int bound
 #ifdef MASTER
-	, name
+	, char *name
 #endif
 )
-struct obj_info *info;
-int bound;
-#ifdef MASTER
-char *name;
-#endif
 {
-    struct obj_info *endp, *start;
+#ifdef MASTER
+	struct obj_info *start = info;
+#endif
+    struct obj_info *endp;
 
-    start = info;
     endp = info + bound;
     while (++info < endp)
 	info->oi_prob += (info - 1)->oi_prob;
@@ -396,6 +401,7 @@ char *name;
  * init_probs:
  *	Initialize the probabilities for the various items
  */
+void
 init_probs()
 {
     sumprobs(things, NT);
@@ -412,10 +418,8 @@ init_probs()
  * badcheck:
  *	Check to see if a series of probabilities sums to 100
  */
-badcheck(name, info, bound)
-char *name;
-register struct obj_info *info;
-register int bound;
+void
+badcheck(char *name, struct obj_info *info, int bound)
 {
     register struct obj_info *end;
 
@@ -437,8 +441,7 @@ register int bound;
  *	otherwise return the given color.
  */
 char *
-pick_color(col)
-char *col;
+pick_color(char *col)
 {
     return (on(player, ISHALU) ? rainbow[rnd(NCOLORS)] : col);
 }

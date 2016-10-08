@@ -12,8 +12,7 @@
  */
 
 #include <curses.h>
-#ifdef	attron
-#endif	/* attron */
+#include <string.h>
 #include <ctype.h>
 #include "rogue.h"
 
@@ -127,9 +126,9 @@ inv_name(THING *obj, bool drop)
 	    strcat(pb, " (on right hand)");
     }
     if (drop && isupper(prbuf[0]))
-	prbuf[0] = tolower(prbuf[0]);
+	prbuf[0] = (char) tolower(prbuf[0]);
     else if (!drop && islower(*prbuf))
-	*prbuf = toupper(*prbuf);
+	*prbuf = (char) toupper(*prbuf);
     prbuf[MAXSTR-1] = '\0';
     return prbuf;
 }
@@ -139,6 +138,7 @@ inv_name(THING *obj, bool drop)
  *	Put something down
  */
 
+void
 drop()
 {
     char ch;
@@ -155,12 +155,12 @@ drop()
 	return;
     if (!dropcheck(obj))
 	return;
-    obj = leave_pack(obj, TRUE, !ISMULT(obj->o_type));
+    obj = leave_pack(obj, TRUE, (bool)!ISMULT(obj->o_type));
     /*
      * Link it into the level object list
      */
     attach(lvl_obj, obj);
-    chat(hero.y, hero.x) = obj->o_type;
+    chat(hero.y, hero.x) = (char) obj->o_type;
     flat(hero.y, hero.x) |= F_DROPPED;
     obj->o_pos = hero;
     if (obj->o_type == AMULET)
@@ -325,7 +325,7 @@ pick_one(struct obj_info *info, int nitems)
 #endif
 	info = start;
     }
-    return info - start;
+    return (int)(info - start);
 }
 
 /*
@@ -339,6 +339,7 @@ static bool newpage = FALSE;
 static char *lastfmt, *lastarg;
 
 
+void
 discovered()
 {
     char ch;
@@ -398,12 +399,13 @@ discovered()
 #define MAX4(a,b,c,d)	(a > b ? (a > c ? (a > d ? a : d) : (c > d ? c : d)) : (b > c ? (b > d ? b : d) : (c > d ? c : d)))
 
 
+void
 print_disc(char type)
 {
     struct obj_info *info = NULL;
     int i, maxnum = 0, num_found;
     static THING obj;
-    static short order[MAX4(MAXSCROLLS, MAXPOTIONS, MAXRINGS, MAXSTICKS)];
+    static int order[MAX4(MAXSCROLLS, MAXPOTIONS, MAXRINGS, MAXSTICKS)];
 
     switch (type)
     {
@@ -445,7 +447,8 @@ print_disc(char type)
  *	Set up order for list
  */
 
-set_order(short *order, int numthings)
+void
+set_order(int *order, int numthings)
 {
     int i, r, t;
 
@@ -490,7 +493,7 @@ add_line(char *fmt, char *arg)
     else
     {
 	if (maxlen < 0)
-	    maxlen = strlen(prompt);
+	    maxlen = (int) strlen(prompt);
 	if (line_cnt >= LINES - 1 || fmt == NULL)
 	{
 	    if (inv_type == INV_OVER && fmt == NULL && !newpage)
@@ -511,10 +514,12 @@ add_line(char *fmt, char *arg)
 		 * if there are lines below, use 'em
 		 */
 		if (LINES > NUMLINES)
+		{
 		    if (NUMLINES + line_cnt > LINES)
 			mvwin(tw, LINES - (line_cnt + 1), COLS - maxlen - 3);
 		    else
 			mvwin(tw, NUMLINES, 0);
+		}
 		touchwin(tw);
 		wrefresh(tw);
 		wait_for(' ');
@@ -535,13 +540,11 @@ add_line(char *fmt, char *arg)
 		wait_for(' ');
 		clearok(curscr, TRUE);
 		wclear(hw);
-#ifdef	attron
 		touchwin(stdscr);
-#endif	/* attron */
 	    }
 	    newpage = TRUE;
 	    line_cnt = 0;
-	    maxlen = strlen(prompt);
+	    maxlen = (int) strlen(prompt);
 	}
 	if (fmt != NULL && !(line_cnt == 0 && *fmt == '\0'))
 	{
@@ -561,9 +564,11 @@ add_line(char *fmt, char *arg)
  *	End the list of lines
  */
 
+void
 end_line()
 {
     if (inv_type != INV_SLOW)
+    {
 	if (line_cnt == 1 && !newpage)
 	{
 	    mpos = 0;
@@ -571,6 +576,7 @@ end_line()
 	}
 	else
 	    add_line((char *) NULL, NULL);
+    }
     line_cnt = 0;
     newpage = FALSE;
 }
@@ -608,6 +614,7 @@ nothing(char type)
  *	Give the proper name to a potion, stick, or ring
  */
 
+void
 nameit(THING *obj, char *type, char *which, struct obj_info *op,
     char *(*prfunc)(THING *))
 {
@@ -638,6 +645,7 @@ nameit(THING *obj, char *type, char *which, struct obj_info *op,
 char *
 nullstr(THING *ignored)
 {
+    NOOP(ignored);
     return "";
 }
 
@@ -647,6 +655,7 @@ nullstr(THING *ignored)
  *	List possible potions, scrolls, etc. for wizard.
  */
 
+void
 pr_list()
 {
     int ch;
@@ -682,6 +691,7 @@ pr_list()
  *	Print specific list of possible items to choose from
  */
 
+void
 pr_spec(struct obj_info *info, int nitems)
 {
     struct obj_info *endp;

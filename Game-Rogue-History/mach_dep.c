@@ -25,30 +25,31 @@
  *			when people are playing.  Since it is divided
  *			by 10, to specify a load limit of 4.0, MAXLOAD
  *			should be "40".	 If defined, then
- *	LOADAV		Should it use it's own routine to get
- *			the load average?
- *	NAMELIST	If so, where does the system namelist
- *			hide?
+ *      LOADAV		Should it use it's own routine to get
+ *		        the load average?
+ *      NAMELIST	If so, where does the system namelist
+ *		        hide?
  *	MAXUSERS	What (if any) the maximum user count should be
- *	        	when people are playing.  If defined, then
- *	UCOUNT		Should it use it's own routine to count
- *			users?
- *	UTMP		If so, where does the user list hide?
+ *	                when people are playing.  If defined, then
+ *      UCOUNT		Should it use it's own routine to count
+ *		        users?
+ *      UTMP		If so, where does the user list hide?
  *	CHECKTIME	How often/if it should check during the game
  *			for high load average.
  */
 
-#include <curses.h>
-#include "extern.h"
 #include <signal.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <limits.h>
-
+#include <string.h>
 #include <fcntl.h>
+#include <errno.h>
+#include <time.h>
+#include <curses.h>
+#include "extern.h"
 
-static char scorefile[PATH_MAX] = "rogue54.scr";
-static char lockfile[PATH_MAX] = "rogue54.lck";
+#define NOOP(x) (x += 0)
 
 # ifndef NUMSCORES
 #	define	NUMSCORES	10
@@ -73,6 +74,7 @@ static int num_checks;		/* times we've gone over in checkout() */
  *	Check out too see if it is proper to play the game now
  */
 
+void
 init_check()
 {
 #if defined(MAXLOAD) || defined(MAXUSERS)
@@ -91,31 +93,39 @@ init_check()
 
 /*
  * open_score:
- *	Open up the score file for future use, and then
- *	setuid(getuid()) in case we are running setuid.
+ *	Open up the score file for future use
  */
 
+void
 open_score()
 {
-    char *homedir = md_getroguedir();
-
-    if (homedir == NULL)
-        homedir = "";
-
 #ifdef SCOREFILE
-    strcpy(scorefile, homedir);
-    if (*scorefile)
-        strcat(scorefile,"/");
-    strcat(scorefile, "rogue54.scr");
-    strcpy(lockfile, homedir);
-    if (*lockfile)
-        strcat(lockfile, "/");
-    strcat(lockfile, "rogue54.lck");
-    fd = open(scorefile, O_RDWR | O_CREAT, 0666);
+    char *scorefile = SCOREFILE;
+     /* 
+      * We drop setgid privileges after opening the score file, so subsequent 
+      * open()'s will fail.  Just reuse the earlier filehandle. 
+      */
+
+    if (scoreboard != NULL) { 
+        rewind(scoreboard); 
+        return; 
+    } 
+
+    scoreboard = fopen(scorefile, "r+");
+
+    if ((scoreboard == NULL) && (errno == ENOENT))
+    {
+    	scoreboard = fopen(scorefile, "w+");
+        md_chmod(scorefile,0664);
+    }
+
+    if (scoreboard == NULL) { 
+         fprintf(stderr, "Could not open %s for writing: %s\n", scorefile, strerror(errno)); 
+         fflush(stderr); 
+    } 
 #else
-    fd = -1;
+    scoreboard = NULL;
 #endif
-    md_normaluser();
 }
 
 /*
@@ -123,54 +133,28 @@ open_score()
  *	Get starting setup for all games
  */
 
+void
 setup()
 {
 #ifdef CHECKTIME
     int  checkout();
 #endif
 
-#ifdef SIGHUP
-    signal(SIGHUP, auto_save);
-#endif
-#ifndef DUMP
-    signal(SIGILL, auto_save);
-#ifdef SIGTRAP
-    signal(SIGTRAP, auto_save);
-#endif
-#ifdef SIGIOT
-    signal(SIGIOT, auto_save);
-#endif
-#ifdef SIGEMT
-    signal(SIGEMT, auto_save);
-#endif
-    signal(SIGFPE, auto_save);
-#ifdef SIGBUS
-    signal(SIGBUS, auto_save);
-#endif
-    signal(SIGSEGV, auto_save);
-#ifdef SIGSYS
-    signal(SIGSYS, auto_save);
-#endif
-    signal(SIGTERM, auto_save);
+#ifdef DUMP
+    md_onsignal_autosave();
+#else
+    md_onsignal_default();
 #endif
 
-    signal(SIGINT, quit);
-#ifndef DUMP
-#ifdef SIGQUIT
-    signal(SIGQUIT, endit);
-#endif
-#endif
 #ifdef CHECKTIME
-    signal(SIGALRM, checkout);
-    alarm(CHECKTIME * 60);
+    md_start_checkout_timer(CHECKTIME*60);
     num_checks = 0;
 #endif
+
     raw();				/* Raw mode */
     noecho();				/* Echo off */
     keypad(stdscr,1);
-#ifdef TIOCGLTC
     getltchars();			/* get the local tty chars */
-#endif
 }
 
 /*
@@ -178,15 +162,12 @@ setup()
  *	Get the local tty chars for later use
  */
 
+void
 getltchars()
 {
-#ifdef TIOCGLTC
-    ioctl(1, TIOCGLTC, &ltc);
     got_ltc = TRUE;
-    orig_dsusp = ltc.t_dsuspc;
-    ltc.t_dsuspc = ltc.t_suspc;
-    ioctl(1, TIOCSLTC, &ltc);
-#endif
+    orig_dsusp = md_dsuspchar();
+    md_setdsuspchar( md_suspchar() );
 }
 
 /* 
@@ -196,12 +177,9 @@ getltchars()
 void 
 resetltchars(void) 
 { 
-#ifdef TIOCGLTC 
-    if (got_ltc) { 
-        ltc.t_dsuspc = orig_dsusp; 
-        ioctl(1, TIOCSLTC, &ltc); 
+    if (got_ltc) {
+        md_setdsuspchar(orig_dsusp);
     } 
-#endif 
 } 
   
 /* 
@@ -211,12 +189,9 @@ resetltchars(void)
 void 
 playltchars(void) 
 { 
-#ifdef TIOCGLTC 
     if (got_ltc) { 
-        ltc.t_dsuspc = ltc.t_suspc; 
-        ioctl(1, TIOCSLTC, &ltc); 
+        md_setdsuspchar( md_suspchar() );
     } 
-#endif 
 } 
 
 /*
@@ -224,31 +199,33 @@ playltchars(void)
  *	Start the scoring sequence
  */
 
+void
 start_score()
 {
 #ifdef CHECKTIME
-    signal(SIGALRM, SIG_IGN);
+    md_stop_checkout_timer();
 #endif
 }
 
-/*
- * is_symlink:
- *	See if the file has a symbolic link
- */
-bool
-is_symlink(char *sp)
-{
-#ifdef S_IFLNK
-    struct stat sbuf2;
-
-    if (lstat(sp, &sbuf2) < 0)
-	return FALSE;
-    else
-	return ((sbuf2.st_mode & S_IFMT) != S_IFREG);
+/* 	 	 
+ * is_symlink: 	 	 
+ *      See if the file has a symbolic link 	 	 
+  */ 	 	 
+bool 	 	 
+is_symlink(char *sp) 	 	 
+{ 	 	 
+#ifdef S_IFLNK 	 	 
+    struct stat sbuf2; 	 	 
+ 	 	 
+    if (lstat(sp, &sbuf2) < 0) 	 	 
+        return FALSE; 	 	 
+    else 	 	 
+        return ((sbuf2.st_mode & S_IFMT) != S_IFREG); 	 	 
 #else
-    return FALSE;
-#endif
-}
+	NOOP(sp);
+    return FALSE; 	 	 
+#endif 
+} 
 
 #if defined(MAXLOAD) || defined(MAXUSERS)
 /*
@@ -265,7 +242,7 @@ too_much()
 #endif
 
 #ifdef MAXLOAD
-    loadav(avec);
+    md_loadav(avec);
     if (avec[1] > (MAXLOAD / 10.0))
 	return TRUE;
 #endif
@@ -312,7 +289,6 @@ checkout(int sig)
     };
     int checktime;
 
-    signal(SIGALRM, checkout);
     if (too_much())
     {
 	if (author())
@@ -323,7 +299,6 @@ checkout(int sig)
 	else if (num_checks++ == 3)
 	    fatal("Sorry.  You took too long.  You are dead\n");
 	checktime = (CHECKTIME * 60) / num_checks;
-	alarm(checktime);
 	chmsg(msgs[num_checks - 1], ((double) checktime / 60.0));
     }
     else
@@ -333,8 +308,10 @@ checkout(int sig)
 	    num_checks = 0;
 	    chmsg("The load has dropped back down.  You have a reprieve");
 	}
-	alarm(CHECKTIME * 60);
+	checktime = (CHECKTIME * 60);
     }
+
+	md_start_checkout_timer(checktime);
 }
 
 /*
@@ -354,43 +331,6 @@ chmsg(char *fmt, int arg)
 	putchar('\n');
 	fflush(stdout);
     }
-}
-#endif
-
-#ifdef LOADAV
-/*
- * loadav:
- *	Looking up load average in core (for system where the loadav()
- *	system call isn't defined
- */
-
-#include <nlist.h>
-
-struct nlist avenrun = {
-    "_avenrun"
-};
-
-
-loadav(double *avg)
-{
-    int kmem;
-
-    if ((kmem = open("/dev/kmem", 0)) < 0)
-	goto bad;
-    nlist(NAMELIST, &avenrun);
-    if (avenrun.n_type == 0)
-    {
-	close(kmem);
-bad:
-	avg[0] = 0.0;
-	avg[1] = 0.0;
-	avg[2] = 0.0;
-	return;
-    }
-
-    lseek(kmem, (long) avenrun.n_value, 0);
-    read(kmem, (char *) avg, 3 * sizeof (double));
-    close(kmem);
 }
 #endif
 
@@ -429,26 +369,27 @@ ucount()
  *	lock the score file.  If it takes too long, ask the user if
  *	they care to wait.  Return TRUE if the lock is successful.
  */
-static int lfd = -1;
+static FILE *lfd = NULL;
 bool
 lock_sc()
 {
-#ifdef SCOREFILE
+#if defined(SCOREFILE) && defined(LOCKFILE)
     int cnt;
     static struct stat sbuf;
+    char *lockfile = LOCKFILE;
 
 over:
-    if ((lfd=md_creat(lockfile, 0000)) >= 0)
+    if ((lfd=fopen(lockfile, "w+")) != NULL)
 	return TRUE;
     for (cnt = 0; cnt < 5; cnt++)
     {
 	md_sleep(1);
-	if ((lfd=md_creat(lockfile, 0000)) >= 0)
+	if ((lfd=fopen(lockfile, "w+")) != NULL)
 	    return TRUE;
     }
     if (stat(lockfile, &sbuf) < 0)
     {
-	lfd=md_creat(lockfile, 0000);
+	lfd=fopen(lockfile, "w+");
 	return TRUE;
     }
     if (time(NULL) - sbuf.st_mtime > 10)
@@ -462,15 +403,15 @@ over:
 	printf("The score file is very busy.  Do you want to wait longer\n");
 	printf("for it to become free so your score can get posted?\n");
 	printf("If so, type \"y\"\n");
-	fgets(prbuf, MAXSTR, stdin);
+	(void) fgets(prbuf, MAXSTR, stdin);
 	if (prbuf[0] == 'y')
 	    for (;;)
 	    {
-		if ((lfd=md_creat(lockfile, 0000)) >= 0)
+		if ((lfd=fopen(lockfile, "w+")) != 0)
 		    return TRUE;
 		if (stat(lockfile, &sbuf) < 0)
 		{
-		    lfd=md_creat(lockfile, 0000);
+		    lfd=fopen(lockfile, "w+");
 		    return TRUE;
 		}
 		if (time(NULL) - sbuf.st_mtime > 10)
@@ -483,6 +424,8 @@ over:
 	else
 	    return FALSE;
     }
+#else
+    return TRUE;
 #endif
 }
 
@@ -491,13 +434,14 @@ over:
  *	Unlock the score file
  */
 
+void
 unlock_sc()
 {
-#ifdef SCOREFILE
-    if (lfd != -1)
-        close(lfd);
-    lfd = -1;
-    md_unlink(lockfile);
+#if defined(SCOREFILE) && defined(LOCKFILE)
+    if (lfd != NULL)
+        fclose(lfd);
+    lfd = NULL;
+    md_unlink(LOCKFILE);
 #endif
 }
 
@@ -506,6 +450,7 @@ unlock_sc()
  *	Flush typeahead for traps, etc.
  */
 
+void
 flush_type()
 {
     flushinp();

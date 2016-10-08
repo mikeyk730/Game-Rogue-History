@@ -17,6 +17,7 @@
  * doctor:
  *	A healing daemon that restors hit points after rest
  */
+void
 doctor()
 {
     register int lv, ohp;
@@ -48,6 +49,7 @@ doctor()
  * Swander:
  *	Called when it is time to start rolling for wandering monsters
  */
+void
 swander()
 {
     start_daemon(rollwand, 0, BEFORE);
@@ -58,6 +60,7 @@ swander()
  *	Called to roll to see if a wandering monster starts up
  */
 int between = 0;
+void
 rollwand()
 {
 
@@ -77,6 +80,7 @@ rollwand()
  * unconfuse:
  *	Release the poor player from his confusion
  */
+void
 unconfuse()
 {
     player.t_flags &= ~ISHUH;
@@ -87,6 +91,7 @@ unconfuse()
  * unsee:
  *	Turn off the ability to see invisible
  */
+void
 unsee()
 {
     register THING *th;
@@ -101,6 +106,7 @@ unsee()
  * sight:
  *	He gets his sight back
  */
+void
 sight()
 {
     if (on(player, ISBLIND))
@@ -118,6 +124,7 @@ sight()
  * nohaste:
  *	End the hasting
  */
+void
 nohaste()
 {
     player.t_flags &= ~ISHASTE;
@@ -128,6 +135,7 @@ nohaste()
  * stomach:
  *	Digest the hero's food
  */
+void
 stomach()
 {
     register int oldfood;
@@ -182,6 +190,7 @@ stomach()
  * come_down:
  *	Take the hero down off her acid trip.
  */
+void
 come_down()
 {
     register THING *tp;
@@ -229,6 +238,7 @@ come_down()
  * visuals:
  *	change the characters for the player
  */
+void
 visuals()
 {
     register THING *tp;
@@ -276,6 +286,7 @@ visuals()
  * land:
  *	Land from a levitation potion
  */
+void
 land()
 {
     player.t_flags &= ~ISLEVIT;
